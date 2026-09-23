@@ -8,8 +8,8 @@ import torch
 LEG_JOINT_LIMITS = {
     "abad_L_Joint": (math.radians(-22), math.radians(80)),
     "abad_R_Joint": (math.radians(-80), math.radians(22)),
-    "hip_L_Joint": (math.radians(-58), math.radians(80)),
-    "hip_R_Joint": (math.radians(-80), math.radians(58)),
+    "hip_L_Joint": (math.radians(-58), 0.0),
+    "hip_R_Joint": (0.0, math.radians(58)),
     "knee_L_Joint": (math.radians(-50), math.radians(78)),
     "knee_R_Joint": (math.radians(-78), math.radians(50)),
 }

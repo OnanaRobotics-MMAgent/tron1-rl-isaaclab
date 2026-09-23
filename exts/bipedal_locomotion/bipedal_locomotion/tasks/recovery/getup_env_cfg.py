@@ -13,7 +13,7 @@ from bipedal_locomotion.tasks.locomotion import mdp as locomotion_mdp
 from bipedal_locomotion.tasks.locomotion.robots.limx_wheelfoot_env_cfg import WFBlindFlatEnvCfg
 
 from . import mdp
-from .mdp.actions import LimitedLegPositionAction
+from .mdp.actions import LandingLegPositionAction, LandingWheelVelocityAction, LimitedLegPositionAction
 from .mdp.limits import LEG_JOINT_LIMITS
 
 
@@ -42,6 +42,9 @@ class GetUpCfg:
     # wheel bottom is about 0.16 m below base_Link.
     target_height: float = 0.18
     reset_clearance: float = 0.02
+    require_landing: bool = False
+    landing_force: float = 5.0
+    landing_hold_time: float = 0.1
     success_tilt: float = math.radians(15.0)
     height_tolerance: float = 0.07
     max_linear_speed: float = 0.25
@@ -120,7 +123,7 @@ class WFGetUpEnvCfg(WFBlindFlatEnvCfg):
         self.actions.joint_pos.class_type = LimitedLegPositionAction
         self.actions.joint_pos.clip = {
             "abad_L_Joint": (-0.29, 1.30), "abad_R_Joint": (-1.30, 0.29),
-            "hip_L_Joint": (-0.95, 1.30), "hip_R_Joint": (-1.30, 0.95),
+            "hip_L_Joint": (-0.95, 0.0), "hip_R_Joint": (0.0, 0.95),
             "knee_L_Joint": (-0.80, 1.29), "knee_R_Joint": (-1.29, 0.80),
         }
         self.actions.joint_vel.scale = 2.0
@@ -212,5 +215,36 @@ class WFGetUpAutoEnvCfg_PLAY(WFGetUpAutoEnvCfg):
         super().__post_init__()
         self.scene.num_envs = 32
         self.getup.curriculum_enabled = False
+        self.observations.policy.enable_corruption = False
+        self.observations.obsHistory.enable_corruption = False
+
+
+@configclass
+class WFInvertedGetUpEnvCfg(WFGetUpEnvCfg):
+    """Start every episode near 180 degrees and release control after ground contact."""
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.getup.tilt_ranges_deg = ((170.0, 180.0),)
+        self.getup.curriculum_enabled = False
+        self.getup.require_landing = True
+        self.getup.landing_hold_time = 0.0
+        self.getup.reset_clearance = 0.005
+        self.terminations.success.params["landing_cfg"] = SceneEntityCfg(
+            "contact_forces", body_names="base_Link"
+        )
+        self.actions.joint_pos.class_type = LandingLegPositionAction
+        self.actions.joint_vel.class_type = LandingWheelVelocityAction
+        self.rewards.height.func = mdp.signed_height_tracking
+        self.rewards.height.weight = 16.0
+        self.rewards.upright.weight = 2.0
+        self.rewards.success.weight = 70.0
+
+
+@configclass
+class WFInvertedGetUpEnvCfg_PLAY(WFInvertedGetUpEnvCfg):
+    def __post_init__(self):
+        super().__post_init__()
+        self.scene.num_envs = 32
         self.observations.policy.enable_corruption = False
         self.observations.obsHistory.enable_corruption = False

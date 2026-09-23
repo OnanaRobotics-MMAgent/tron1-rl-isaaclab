@@ -7,11 +7,13 @@ from .agents.rsl_rl_ppo_cfg import (
     WF_TRON1AGetUpRecoveryPPORunnerCfg,
     WF_TRON1AGetUpAutoPPORunnerCfg,
     WF_TRON1AGetUpBoundedPPORunnerCfg,
+    WF_TRON1AInvertedPPORunnerCfg,
 )
 from .getup_env_cfg import (
     WFGetUpEnvCfg, WFGetUpEnvCfg_PLAY,
     WFGetUpRecoveryEnvCfg, WFGetUpRecoveryEnvCfg_PLAY,
     WFGetUpAutoEnvCfg, WFGetUpAutoEnvCfg_PLAY,
+    WFInvertedGetUpEnvCfg, WFInvertedGetUpEnvCfg_PLAY,
 )
 
 for task_id, env_cfg in (
@@ -56,6 +58,17 @@ for task_id, env_cfg in (
         entry_point="isaaclab.envs:ManagerBasedRLEnv",
         disable_env_checker=True,
         kwargs={"env_cfg_entry_point": env_cfg, "rsl_rl_cfg_entry_point": WF_TRON1AGetUpBoundedPPORunnerCfg},
+    )
+
+for task_id, env_cfg in (
+    ("Isaac-Limx-WF-GetUp-Inverted-v0", WFInvertedGetUpEnvCfg),
+    ("Isaac-Limx-WF-GetUp-Inverted-Play-v0", WFInvertedGetUpEnvCfg_PLAY),
+):
+    gym.register(
+        id=task_id,
+        entry_point="isaaclab.envs:ManagerBasedRLEnv",
+        disable_env_checker=True,
+        kwargs={"env_cfg_entry_point": env_cfg, "rsl_rl_cfg_entry_point": WF_TRON1AInvertedPPORunnerCfg},
     )
 
 from .fallen_pose_env_cfg import (

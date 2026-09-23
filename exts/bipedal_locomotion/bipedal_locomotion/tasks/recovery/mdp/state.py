@@ -21,6 +21,8 @@ class GetUpState:
         self.success = torch.zeros(env.num_envs, device=env.device, dtype=torch.bool)
         self.steps = torch.zeros_like(self.hold)
         self.active = torch.zeros_like(self.success)
+        self.landing_steps = torch.zeros_like(self.hold)
+        self.control_ready = torch.ones_like(self.success)
         self.start_xy = torch.zeros(env.num_envs, 2, device=env.device)
         self.last_step = -1
 

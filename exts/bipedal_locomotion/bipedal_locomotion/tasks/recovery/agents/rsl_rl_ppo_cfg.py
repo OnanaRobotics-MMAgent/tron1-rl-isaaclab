@@ -46,3 +46,8 @@ class WF_TRON1AGetUpBoundedPPORunnerCfg(WF_TRON1AGetUpAutoPPORunnerCfg):
 @configclass
 class WF_TRON1AFallenPPORunnerCfg(WF_TRON1AGetUpBoundedPPORunnerCfg):
     experiment_name = 'wf_tron_1a_fallen'
+
+
+@configclass
+class WF_TRON1AInvertedPPORunnerCfg(WF_TRON1AGetUpBoundedPPORunnerCfg):
+    experiment_name = "wf_tron_1a_inverted"

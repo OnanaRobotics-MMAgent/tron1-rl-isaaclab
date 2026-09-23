@@ -72,6 +72,24 @@ CHECKPOINT="$PWD/logs/rsl_rl/wf_tron_1a_getup_bounded/2026-09-17_12-43-05_contin
 
 视频写入 checkpoint 同级的 `videos/play/`，重复录制前需保留已有同名文件。独立评估使用 `scripts/rsl_rl/evaluate_getup.py`（参数见 `--help`）。自动训练入口为 `manage_getup.py start/status/stop`：每 2000 次更新评估，自动晋级和记录；已有状态目录会恢复原进度，达标后自动停止。评估记录位于 `logs/getup_continuous/`。
 
+### 固定倒置起身
+
+`Isaac-Limx-WF-GetUp-Inverted-v0` 每回合以随机方向和偏航角从 170°–180° 倒置姿态重置，贴近地面后以中性动作等待连续 0.1 秒接触，再交由策略控制腿和轮。目标机身高度为 0.18 m；主要高度奖励乘以 `clamp((up_z + 1) / 2, 0, 1)^2`，其中 `up_z` 是机身上方向与世界向上方向的有符号点积。完全倒立时系数为 0，侧躺时为 0.25，完全朝上时为 1；靠近倒立时缓慢增加，靠近朝上时增加更快。其他奖励与原任务的稳定站立、接触和关节限位约束沿用。这个任务与原倾角课程使用独立的实验目录，不会修改原任务的 checkpoint。
+
+```bash
+python scripts/rsl_rl/train.py --task Isaac-Limx-WF-GetUp-Inverted-v0 \
+  --num_envs 512 --max_iterations 100 --save_interval 25 --headless
+
+python scripts/rsl_rl/check_getup.py \
+  --task Isaac-Limx-WF-GetUp-Inverted-Play-v0 --num_envs 16 --headless
+
+python scripts/rsl_rl/play.py --task Isaac-Limx-WF-GetUp-Inverted-Play-v0 \
+  --checkpoint_path logs/rsl_rl/wf_tron_1a_inverted/<run>/model_100.pt \
+  --num_envs 16 --eval_episodes 2 --headless
+```
+
+2026-09-23 的从零训练试跑（512 环境、100 次更新、1,228,800 环境步）保存于 `logs/rsl_rl/wf_tron_1a_inverted/2026-09-23_18-58-02_inverted_100/`。这次试跑使用的是改动前 `up_z > 0` 的高度奖励：触地与控制释放检查为 16/16，但高度奖励仍为零，独立评估成功率为 0/32；`model_100.pt` 只是旧奖励下的可复现实验 checkpoint，不是已学会起身的策略。新奖励尚未重新训练评估。
+
 ### 随机关节倒地（Fallen）
 
 `recovery/fallen_pose_env_cfg.py` 定义被动姿态生成环境及新任务 `Isaac-Limx-WF-Recovery-Fallen-v0`（播放加 `-Play`）。生成时关闭腿的位置驱动，随机合法关节和身体朝向，自然落稳后记录状态；训练时恢复正常执行器，从姿态库 reset。数据文件位于 `data/recovery/fallen_v1.pt`，请与日志分开保留。
