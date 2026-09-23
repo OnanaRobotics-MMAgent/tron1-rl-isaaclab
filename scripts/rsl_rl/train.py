@@ -3,6 +3,7 @@
 """Launch Isaac Sim Simulator first."""
 
 import argparse
+import pickle
 import sys
 
 from isaaclab.app import AppLauncher
@@ -58,7 +59,7 @@ from isaaclab.envs import (
     multi_agent_to_single_agent,
 )
 from isaaclab.utils.dict import print_dict
-from isaaclab.utils.io import dump_pickle, dump_yaml
+from isaaclab.utils.io import dump_yaml
 from isaaclab_tasks.utils import get_checkpoint_path, parse_env_cfg
 
 # Import extensions to set up environment tasks
@@ -148,8 +149,10 @@ def main():
     # dump the configuration into log-directory
     dump_yaml(os.path.join(log_dir, "params", "env.yaml"), env_cfg)
     dump_yaml(os.path.join(log_dir, "params", "agent.yaml"), agent_cfg)
-    dump_pickle(os.path.join(log_dir, "params", "env.pkl"), env_cfg)
-    dump_pickle(os.path.join(log_dir, "params", "agent.pkl"), agent_cfg)
+    with open(os.path.join(log_dir, "params", "env.pkl"), "wb") as file:
+        pickle.dump(env_cfg, file)
+    with open(os.path.join(log_dir, "params", "agent.pkl"), "wb") as file:
+        pickle.dump(agent_cfg, file)
     dump_yaml(os.path.join(log_dir, "params", "continuation.yaml"), {
         "checkpoint_path": args_cli.checkpoint_path,
         "reset_optimizer": args_cli.reset_optimizer,
@@ -157,7 +160,8 @@ def main():
 
     # run training
     runner.learn(num_learning_iterations=agent_cfg.max_iterations,
-                 init_at_random_ep_len=not hasattr(env_cfg, "getup"))
+                 init_at_random_ep_len=(not hasattr(env_cfg, "getup")
+                                        and not getattr(env_cfg, "deterministic_baseline", False)))
 
     # close the simulator
     env.close()

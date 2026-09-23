@@ -38,8 +38,9 @@ class GetUpCfg:
     replay_probability: float = 0.2
     min_curriculum_episodes: int = 1024
     promote_success_rate: float = 0.75
-    # Neutral USD wheel bottom is 0.90682 m below base_Link (not the spawn height 0.966).
-    target_height: float = 0.90
+    # The supplied wheel mesh has a radius of about 0.0375 m and the neutral
+    # wheel bottom is about 0.16 m below base_Link.
+    target_height: float = 0.18
     reset_clearance: float = 0.02
     success_tilt: float = math.radians(15.0)
     height_tolerance: float = 0.07
@@ -97,6 +98,9 @@ class GetUpCurriculumCfg:
 
 @configclass
 class WFGetUpEnvCfg(WFBlindFlatEnvCfg):
+    # Recovery retains its own random fallen-pose curriculum and material
+    # settings; the deterministic baseline is for flat locomotion only.
+    deterministic_baseline: bool = False
     getup: GetUpCfg = GetUpCfg()
 
     def __post_init__(self):
@@ -111,7 +115,7 @@ class WFGetUpEnvCfg(WFBlindFlatEnvCfg):
         self.curriculum = GetUpCurriculumCfg()
 
         # Same 6 position + 2 velocity actions, wider reach for recovery. Keep the
-        # original 80 Nm / 15 rad/s actuators and their position/velocity semantics.
+        # Use the conservative actuator limits from the adapted wheel-leg USD.
         self.actions.joint_pos.scale = 1.0
         self.actions.joint_pos.class_type = LimitedLegPositionAction
         self.actions.joint_pos.clip = {
@@ -119,8 +123,8 @@ class WFGetUpEnvCfg(WFBlindFlatEnvCfg):
             "hip_L_Joint": (-0.95, 1.30), "hip_R_Joint": (-1.30, 0.95),
             "knee_L_Joint": (-0.80, 1.29), "knee_R_Joint": (-1.29, 0.80),
         }
-        self.actions.joint_vel.scale = 3.0
-        self.actions.joint_vel.clip = {".*": (-15.0, 15.0)}
+        self.actions.joint_vel.scale = 2.0
+        self.actions.joint_vel.clip = {".*": (-20.0, 20.0)}
         self.commands.base_velocity.heading_command = False
         self.commands.base_velocity.rel_heading_envs = 0.0
         self.commands.base_velocity.rel_standing_envs = 1.0

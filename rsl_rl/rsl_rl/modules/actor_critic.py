@@ -113,9 +113,9 @@ class ActorCritic(nn.Module):
         print(f"Actor MLP: {self.actor}")
         print(f"Critic MLP: {self.critic}")
 
-        # Action noise
-        # self.std = nn.Parameter(init_noise_std * torch.ones(num_actions))
-        self.logstd = nn.Parameter(torch.zeros(num_actions))
+        # Action noise. Keep the configured standard deviation in log-space so
+        # WF's conservative startup exploration is honored by the policy.
+        self.logstd = nn.Parameter(torch.log(torch.full((num_actions,), init_noise_std)))
         self.distribution = None
         # disable args validation for speedup
         Normal.set_default_validate_args = False

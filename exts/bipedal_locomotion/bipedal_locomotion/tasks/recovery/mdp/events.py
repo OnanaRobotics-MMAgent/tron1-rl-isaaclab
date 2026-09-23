@@ -2,6 +2,7 @@
 
 import itertools
 import math
+from pathlib import Path
 
 import torch
 
@@ -25,7 +26,18 @@ def prepare_getup(env, env_ids):
     limits = validated_leg_limits(names, env.cfg.getup.leg_joint_limits,
                                   asset.data.joint_pos_limits[:, leg_ids])
     # An actual PhysX constraint, independent of reward weights or policy outputs.
-    asset.write_joint_position_limit_to_sim(limits, joint_ids=leg_ids)
+    # Isaac Sim 5.x rejects the +/- infinity limits used by continuous wheel
+    # joints when the articulation-wide limit buffer is submitted. Recovery
+    # does not need multiple wheel revolutions, so use a finite temporary
+    # range for the wheel DOFs while preserving the real leg limits.
+    physx_limits = asset.data.joint_pos_limits.clone()
+    physx_limits[:, leg_ids] = limits
+    leg_id_set = {int(idx) for idx in leg_ids}
+    wheel_ids = [idx for idx in range(asset.num_joints) if idx not in leg_id_set]
+    if wheel_ids:
+        physx_limits[:, wheel_ids, 0] = -2.0 * math.pi
+        physx_limits[:, wheel_ids, 1] = 2.0 * math.pi
+    asset.write_joint_position_limit_to_sim(physx_limits)
     env._getup_leg_joint_ids = leg_ids
     if torch.any(asset.data.default_joint_pos.abs() > 1.0e-6):
         raise ValueError("GetUp collision bounds require the WF_TRON1A zero-joint default pose.")
@@ -43,6 +55,23 @@ def prepare_getup(env, env_ids):
             for indices in itertools.product((0, 1), repeat=3):
                 point = Gf.Vec3d(*[(lo, hi)[indices[i]][i] for i in range(3)])
                 corners.append(tuple(root_inv.Transform(point)))
+    if not corners:
+        # IsaacLab's current URDF converter keeps collision geometry in a
+        # sibling physics layer instead of composing it into the main asset.
+        usd_path = Path(asset.cfg.spawn.usd_path)
+        physics_path = usd_path.parent / "configuration" / f"{usd_path.stem}_physics.usd"
+        physics_stage = Usd.Stage.Open(str(physics_path))
+        if physics_stage:
+            physics_cache = UsdGeom.BBoxCache(Usd.TimeCode.Default(), ["default", "render", "proxy", "guide"])
+            for prim in physics_stage.Traverse():
+                if prim.HasAPI(UsdPhysics.CollisionAPI):
+                    bounds = physics_cache.ComputeWorldBound(prim).ComputeAlignedRange()
+                    if bounds.IsEmpty():
+                        continue
+                    lo, hi = bounds.GetMin(), bounds.GetMax()
+                    for indices in itertools.product((0, 1), repeat=3):
+                        point = Gf.Vec3d(*[(lo, hi)[indices[i]][i] for i in range(3)])
+                        corners.append(tuple(point))
     if not corners:
         raise RuntimeError("WF_TRON1A collision geometry could not be read.")
     env._getup_collision_corners = torch.tensor(corners, device=env.device, dtype=torch.float32)

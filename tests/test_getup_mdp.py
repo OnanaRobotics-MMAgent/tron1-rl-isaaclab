@@ -26,13 +26,15 @@ class Scene(dict):
 
 
 def make_env(n=4):
+    # Current WF_TRON1A URDF: the neutral wheel bottom is about 0.1508 m below
+    # base_Link, so the nominal root height is 0.18 m (with reset clearance).
     cfg = SimpleNamespace(initial_level=0, curriculum_enabled=True, min_curriculum_episodes=4,
-                          promote_success_rate=0.75, target_height=0.9, success_tilt=math.radians(15),
+                          promote_success_rate=0.75, target_height=0.18, success_tilt=math.radians(15),
                           height_tolerance=0.07, max_linear_speed=0.25, max_angular_speed=0.5,
                           min_wheel_force=5.0, max_body_force=5.0, max_pose_error=0.16,
                           min_episode_time=0.0, hold_time=0.06, max_drift=2.5, joint_limit_tolerance=0.05)
     data = SimpleNamespace(projected_gravity_b=torch.tensor([[0., 0., -1.]]).repeat(n, 1),
-                           root_pos_w=torch.tensor([[0., 0., 0.9]]).repeat(n, 1),
+                           root_pos_w=torch.tensor([[0., 0., 0.18]]).repeat(n, 1),
                            root_lin_vel_w=torch.zeros(n, 3), root_ang_vel_w=torch.zeros(n, 3),
                            joint_pos=torch.zeros(n, 8), default_joint_pos=torch.zeros(n, 8),
                            joint_pos_limits=torch.tensor([-1.0, 1.0]).expand(n, 8, 2).clone())
@@ -90,10 +92,10 @@ class TestGetUp(unittest.TestCase):
     def test_low_height_penalty_has_grace_and_disappears_at_target(self):
         env = make_env()
         state = get_state(env)
-        env.scene['robot'].data.root_pos_w[:, 2] = torch.tensor([0.15, 0.33, 0.9, 1.1])
+        env.scene['robot'].data.root_pos_w[:, 2] = torch.tensor([0.04, 0.1215, 0.18, 0.25])
         torch.testing.assert_close(rewards.low_height_deficit(env), torch.zeros(4))
         state.steps[:] = 51
-        torch.testing.assert_close(rewards.low_height_deficit(env), torch.tensor([1., 0.76, 0., 0.]))
+        torch.testing.assert_close(rewards.low_height_deficit(env), torch.tensor([1., 0.5, 0., 0.]))
 
     def test_upside_down_is_not_upright(self):
         env = make_env()
@@ -130,9 +132,9 @@ class TestGetUp(unittest.TestCase):
 
     def test_recovery_height_signal_is_dense_and_capped(self):
         env = make_env()
-        env.scene["robot"].data.root_pos_w[:, 2] = torch.tensor([0.15, 0.33, 0.9, 2.0])
+        env.scene["robot"].data.root_pos_w[:, 2] = torch.tensor([0.05, 0.1215, 0.18, 0.30])
         value = rewards.height_progress(env)
-        torch.testing.assert_close(value, torch.tensor([0.0, 0.24, 1.0, 1.0]))
+        torch.testing.assert_close(value, torch.tensor([0.0, 0.5, 1.0, 1.0]))
 
     def test_inference_step_allows_external_reset(self):
         env = make_env()

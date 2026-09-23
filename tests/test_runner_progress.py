@@ -3,6 +3,7 @@
 import ast
 import contextlib
 import io
+import importlib.util
 from pathlib import Path
 import statistics
 from types import SimpleNamespace
@@ -50,6 +51,35 @@ class TestRunnerProgress(unittest.TestCase):
 
     def test_repeated_learn_excludes_previous_elapsed_time(self):
         self.check_progress(7300, 3, prior_time=600.0)
+
+
+class TestRunnerConfiguration(unittest.TestCase):
+    def test_experiment_name_override_and_default(self):
+        import argparse
+
+        path = source.parents[3] / "scripts/rsl_rl/cli_args.py"
+        spec = importlib.util.spec_from_file_location("cli_args_under_test", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        parser = argparse.ArgumentParser()
+        module.add_rsl_rl_args(parser)
+        for argv, expected in (([], "original"),
+                               (["--experiment_name", "wf_smoke"], "wf_smoke")):
+            cfg = SimpleNamespace(experiment_name="original", logger="tensorboard")
+            module.update_rsl_rl_cfg(cfg, parser.parse_args(argv))
+            self.assertEqual(cfg.experiment_name, expected)
+
+    def test_flat_baseline_disables_random_initial_episode_phase(self):
+        path = source.parents[3] / "scripts/rsl_rl/train.py"
+        tree = ast.parse(path.read_text())
+        call = next(node for node in ast.walk(tree) if isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute) and node.func.attr == "learn")
+        expr = next(kw.value for kw in call.keywords if kw.arg == "init_at_random_ep_len")
+        code = compile(ast.Expression(expr), str(path), "eval")
+        for cfg, expected in ((SimpleNamespace(deterministic_baseline=True), False),
+                              (SimpleNamespace(getup=object(), deterministic_baseline=False), False),
+                              (SimpleNamespace(), True)):
+            self.assertEqual(eval(code, {"env_cfg": cfg}), expected)
 
 
 if __name__ == "__main__":

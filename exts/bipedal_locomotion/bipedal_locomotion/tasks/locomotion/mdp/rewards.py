@@ -54,6 +54,63 @@ def joint_powers_l1(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEnt
     return torch.sum(torch.abs(torch.mul(asset.data.applied_torque, asset.data.joint_vel)), dim=1)
 
 
+def joint_torque_excess_l1(
+    env: ManagerBasedRLEnv,
+    asset_cfg: SceneEntityCfg,
+    continuous_torque: float,
+) -> torch.Tensor:
+    """Penalize only the torque above a motor's continuous rating.
+
+    The actuator effort limit remains the hard peak bound. This term gives the
+    policy a differentiable incentive to use the continuous rating (0.8 N-m
+    for the calibrated wheel motor) except for short transients.
+    """
+    asset: Articulation = env.scene[asset_cfg.name]
+    torque = torch.abs(asset.data.applied_torque[:, asset_cfg.joint_ids])
+    return torch.sum(torch.relu(torque - continuous_torque), dim=1)
+
+
+def straight_motion_gate(env, command_name, asset_cfg, turn_rate=0.5):
+    """Fade symmetry out between zero and turn_rate rad/s (command OR actual yaw)."""
+    cmd = env.command_manager.get_command(command_name)
+    actual = env.scene[asset_cfg.name].data.root_ang_vel_b[:, 2]
+    turn = torch.maximum(cmd[:, 2].abs(), actual.abs())
+    return torch.clamp(1.0 - turn / turn_rate, min=0.0, max=1.0)
+
+
+def joint_mirror_pose_l2(env, command_name, asset_cfg, turn_rate=0.5):
+    """Flat WF only: ordered [abad_L,R, hip_L,R, knee_L,R], q_L = -q_R.
+
+    Reflection across body x=0 reverses the common abad -y axis and maps
+    opposing hip/knee x axes to each other. All three angle pairs sum to zero.
+    This is a soft pose cost, not an equality constraint on joint torques.
+    """
+    q = env.scene[asset_cfg.name].data.joint_pos[:, asset_cfg.joint_ids]
+    error = q[:, 0::2] + q[:, 1::2]
+    return torch.sum(error.square(), dim=1) * straight_motion_gate(env, command_name, asset_cfg, turn_rate)
+
+
+def body_y_velocity_error(env, command_name, asset_cfg, scale=1.0):
+    """Dense pseudo-Huber speed error; does not vanish for a large mismatch."""
+    target = env.command_manager.get_command(command_name)[:, 1]
+    actual = env.scene[asset_cfg.name].data.root_lin_vel_b[:, 1]
+    return torch.sqrt(1.0 + ((target - actual) / scale).square()) - 1.0
+
+
+def body_y_reverse_motion(env, command_name, asset_cfg, deadband=0.1):
+    """Penalize velocity opposite to signed body-y command, not wheel-axis signs."""
+    target = env.command_manager.get_command(command_name)[:, 1]
+    actual = env.scene[asset_cfg.name].data.root_lin_vel_b[:, 1]
+    return torch.relu(-torch.sign(target) * actual) * (target.abs() > deadband)
+
+
+def straight_feet_alignment(env, command_name, asset_cfg, axis_idx=1, turn_rate=0.5):
+    """Retain fore-aft wheel alignment on straight paths, release it in turns."""
+    return same_feet_x_position(env, asset_cfg, axis_idx) * straight_motion_gate(
+        env, command_name, asset_cfg, turn_rate
+    )
+
+
 def no_fly(env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg, threshold: float = 1.0) -> torch.Tensor:
     """Reward if only one foot is in contact with the ground."""
 
@@ -162,7 +219,8 @@ def leg_symmetry(env: ManagerBasedRLEnv,
     return torch.exp(-leg_symmetry_err ** 2 / std**2)
 
 def same_feet_x_position(env: ManagerBasedRLEnv,
-                  asset_cfg: SceneEntityCfg) -> torch.Tensor:
+                  asset_cfg: SceneEntityCfg,
+                  axis_idx: int = 0) -> torch.Tensor:
     """Reward regulate abad joint position."""
     # extract the used quantities (to enable type-hinting)
     asset: RigidObject | Articulation = env.scene[asset_cfg.name]
@@ -174,7 +232,7 @@ def same_feet_x_position(env: ManagerBasedRLEnv,
         base_quat,
         feet_pos_w - base_pos,
     )
-    feet_x_distance = torch.abs(feet_pos_b[:, 0, 0] - feet_pos_b[:, 1, 0])
+    feet_x_distance = torch.abs(feet_pos_b[:, 0, axis_idx] - feet_pos_b[:, 1, axis_idx])
     # return torch.exp(-feet_x_distance / 0.2)
     return feet_x_distance
 

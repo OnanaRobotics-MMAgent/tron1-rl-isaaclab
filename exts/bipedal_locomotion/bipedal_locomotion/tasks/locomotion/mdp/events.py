@@ -12,7 +12,7 @@ def prepare_quantity_for_tron(
     env: ManagerBasedEnv,
     env_ids: torch.Tensor | None,
     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
-    foot_radius = 0.127,
+    foot_radius = 0.0375,
 ):
     asset: Articulation = env.scene[asset_cfg.name]
     env._foot_radius = foot_radius
@@ -34,13 +34,13 @@ def apply_external_force_torque_stochastic(
     """
     # extract the used quantities (to enable type-hinting)
     asset: RigidObject | Articulation = env.scene[asset_cfg.name]
-    # clear the existing forces and torques
-    asset._external_force_b *= 0
-    asset._external_torque_b *= 0
-
     # resolve environment ids
     if env_ids is None:
         env_ids = torch.arange(env.scene.num_envs, device=asset.device)
+
+    # IsaacLab 0.54 stores persistent external wrenches in a composer rather
+    # than the legacy articulation buffers used by this repository.
+    asset.permanent_wrench_composer.reset(env_ids)
 
     random_values = torch.rand(env_ids.shape, device=env_ids.device)
     mask = random_values < probability

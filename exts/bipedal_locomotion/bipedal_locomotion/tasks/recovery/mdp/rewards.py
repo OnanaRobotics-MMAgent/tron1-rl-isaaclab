@@ -21,12 +21,15 @@ def height_tracking(env):
 def height_progress(env):
     """Bounded dense height signal below the narrow final-standing kernel."""
     height = env.scene["robot"].data.root_pos_w[:, 2] - env.scene.env_origins[:, 2]
-    return upright(env) * ((height - 0.15) / (env.cfg.getup.target_height - 0.15)).clamp(0.0, 1.0)
+    low_height = max(0.05, env.cfg.getup.target_height * 0.35)
+    return upright(env) * ((height - low_height) / (env.cfg.getup.target_height - low_height)).clamp(0.0, 1.0)
 
 
 def standing_gate(env):
     height = env.scene["robot"].data.root_pos_w[:, 2] - env.scene.env_origins[:, 2]
-    return ((upright(env) - 0.8) / 0.2).clamp(0.0, 1.0) * ((height - 0.55) / 0.3).clamp(0.0, 1.0)
+    low_height = max(0.05, env.cfg.getup.target_height * 0.35)
+    height_scale = max(0.01, env.cfg.getup.target_height - low_height)
+    return ((upright(env) - 0.8) / 0.2).clamp(0.0, 1.0) * ((height - low_height) / height_scale).clamp(0.0, 1.0)
 
 
 def wheel_support(env, sensor_cfg):
@@ -92,5 +95,6 @@ def leg_limit_failure(env, asset_cfg):
 def low_height_deficit(env):
     """Penalize remaining low, with a smooth gradient and a reset grace period."""
     height = env.scene["robot"].data.root_pos_w[:, 2] - env.scene.env_origins[:, 2]
-    deficit = ((env.cfg.getup.target_height - height) / (env.cfg.getup.target_height - 0.15)).clamp(0., 1.)
+    low_height = max(0.05, env.cfg.getup.target_height * 0.35)
+    deficit = ((env.cfg.getup.target_height - height) / (env.cfg.getup.target_height - low_height)).clamp(0., 1.)
     return deficit * (get_state(env).steps * env.step_dt > 1.0)

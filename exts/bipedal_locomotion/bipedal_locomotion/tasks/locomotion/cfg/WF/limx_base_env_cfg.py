@@ -5,6 +5,12 @@ from isaaclab.assets import ArticulationCfg, AssetBaseCfg
 from isaaclab.envs import ManagerBasedRLEnvCfg
 from isaaclab.managers import CurriculumTermCfg as CurrTerm
 from isaaclab.managers import EventTermCfg as EventTerm
+
+from bipedal_locomotion.assets.config.wheelfoot_cfg import (
+    WHEEL_CONTINUOUS_TORQUE_NM,
+    WHEEL_TARGET_SPEED_RAD_S,
+    WHEEL_MAX_BODY_SPEED_MPS,
+)
 from isaaclab.managers import ObservationGroupCfg as ObsGroup
 from isaaclab.managers import ObservationTermCfg as ObsTerm
 from isaaclab.managers import RewardTermCfg as RewTerm
@@ -39,9 +45,9 @@ class WFSceneCfg(InteractiveSceneCfg):
         physics_material=RigidBodyMaterialCfg(
             friction_combine_mode="multiply",
             restitution_combine_mode="multiply",
-            static_friction=1.0,
-            dynamic_friction=1.0,
-            restitution=1.0,
+            static_friction=0.9,
+            dynamic_friction=0.7,
+            restitution=0.0,
         ),
         visual_material=MdlFileCfg(
             mdl_path=f"{ISAACLAB_NUCLEUS_DIR}/Materials/TilesMarbleSpiderWhiteBrickBondHoned/"
@@ -92,7 +98,11 @@ class CommandsCfg:
         debug_vis=True,
         resampling_time_range=(3.0, 15.0),
         ranges=mdp.UniformVelocityCommandCfg.Ranges(
-            lin_vel_x=(-0.7, 0.7), lin_vel_y=(-0.5, 0.5), ang_vel_z=(-math.pi, math.pi), heading=(-math.pi, math.pi)
+            # The supplied URDF has wheel axles along body-x, so the wheels
+            # roll along body-y. A fixed-wheel pair cannot realize lateral
+            # body-x velocity without mecanum/omni wheels.
+            lin_vel_x=(0.0, 0.0), lin_vel_y=(-WHEEL_MAX_BODY_SPEED_MPS, WHEEL_MAX_BODY_SPEED_MPS),
+            ang_vel_z=(-math.pi, math.pi), heading=(-math.pi, math.pi)
         ),
     )
 
@@ -104,14 +114,14 @@ class ActionsCfg:
     joint_pos = mdp.JointPositionActionCfg(
         asset_name="robot",
         joint_names=["abad_L_Joint", "abad_R_Joint", "hip_L_Joint", "hip_R_Joint", "knee_L_Joint", "knee_R_Joint"],
-        scale=0.25,
+        scale=0.12,
         use_default_offset=True,
     )
     
     joint_vel = mdp.JointVelocityActionCfg(
         asset_name="robot",
         joint_names=["wheel_L_Joint", "wheel_R_Joint"],
-        scale=1.0, # 10
+        scale=WHEEL_TARGET_SPEED_RAD_S,
     )
 
 
@@ -227,6 +237,7 @@ class EventsCfg:
         mode="startup",
         params={
             "asset_cfg": SceneEntityCfg("robot"),
+            "foot_radius": 0.0375,
         },
     )
 
@@ -236,7 +247,7 @@ class EventsCfg:
         mode="startup",
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names="base_Link"),
-            "mass_distribution_params": (-5.0, 5.0),
+            "mass_distribution_params": (-0.5, 0.5),
             "operation": "add",
         },
     )
@@ -244,7 +255,7 @@ class EventsCfg:
         func=mdp.randomize_rigid_body_mass,
         mode="startup",
         params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=".*_[LR]_Link"),
+            "asset_cfg": SceneEntityCfg("robot", body_names="(?!wheel_).*_[LR]_Link"),
             "mass_distribution_params": (0.8, 1.2),
             "operation": "scale",
         },
@@ -253,7 +264,7 @@ class EventsCfg:
         func=mdp.randomize_rigid_body_mass_inertia,
         mode="startup",
         params={
-            "asset_cfg": SceneEntityCfg("robot"),
+            "asset_cfg": SceneEntityCfg("robot", body_names="(?!wheel_).+"),
             "mass_inertia_distribution_params": (0.8, 1.2),
             "operation": "scale",
         },
@@ -262,20 +273,35 @@ class EventsCfg:
         func=mdp.randomize_rigid_body_material,
         mode="startup",
         params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=".*"),
+            "asset_cfg": SceneEntityCfg("robot", body_names="(?!wheel_).+"),
             "static_friction_range": (0.4, 1.2),
             "dynamic_friction_range": (0.7, 0.9),
             "restitution_range": (0.0, 1.0),
             "num_buckets": 48,
         },
     )
+    # Unit wheel friction with the ground's multiply mode gives effective
+    # static/dynamic coefficients of 0.9/0.7. No material randomization.
+    wheel_physics_material = EventTerm(
+        func=mdp.randomize_rigid_body_material,
+        mode="startup",
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names="wheel_[LR]_Link"),
+            "static_friction_range": (1.0, 1.0),
+            "dynamic_friction_range": (1.0, 1.0),
+            "restitution_range": (0.0, 0.0),
+            "num_buckets": 1,
+            "make_consistent": True,
+        },
+    )
     robot_joint_stiffness_and_damping = EventTerm(
         func=mdp.randomize_actuator_gains,
         mode="startup",
         params={
-            "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
-            "stiffness_distribution_params": (32, 48),
-            "damping_distribution_params": (2.0, 3.0),
+            # Keep wheel joints as pure velocity actuators: Kp must remain 0.
+            "asset_cfg": SceneEntityCfg("robot", joint_names="(?!wheel_).*"),
+            "stiffness_distribution_params": (12.0, 12.0),
+            "damping_distribution_params": (0.8, 0.8),
             "operation": "abs",
             "distribution": "uniform",
         },
@@ -284,8 +310,8 @@ class EventsCfg:
         func=mdp.randomize_rigid_body_coms,
         mode="startup",
         params={
-            "asset_cfg": SceneEntityCfg("robot"),
-            "com_distribution_params": ((-0.075, 0.075), (-0.075, 0.075), (-0.075, 0.075)),
+            "asset_cfg": SceneEntityCfg("robot", body_names="(?!wheel_).+"),
+            "com_distribution_params": ((-0.025, 0.025), (-0.025, 0.025), (-0.025, 0.025)),
             "operation": "add",
             "distribution": "uniform",
         },
@@ -298,12 +324,12 @@ class EventsCfg:
         params={
             "pose_range": {"x": (-0.5, 0.5), "y": (-0.5, 0.5), "yaw": (-3.14, 3.14)},
             "velocity_range": {
-                "x": (-0.5, 0.5),
-                "y": (-0.5, 0.5),
-                "z": (-0.5, 0.5),
-                "roll": (-0.5, 0.5),
-                "pitch": (-0.5, 0.5),
-                "yaw": (-0.5, 0.5),
+                "x": (-0.05, 0.05),
+                "y": (-0.05, 0.05),
+                "z": (-0.05, 0.05),
+                "roll": (-0.05, 0.05),
+                "pitch": (-0.05, 0.05),
+                "yaw": (-0.05, 0.05),
             },
         },
     )
@@ -313,8 +339,8 @@ class EventsCfg:
         func=mdp.reset_joints_by_offset,
         mode="reset",
         params={
-            "position_range": (-0.2, 0.2),
-            "velocity_range": (-0.5, 0.5),
+            "position_range": (-0.05, 0.05),
+            "velocity_range": (-0.1, 0.1),
         },
     )
 
@@ -322,9 +348,10 @@ class EventsCfg:
         func=mdp.randomize_actuator_gains,
         mode="reset",
         params={
-            "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
-            "stiffness_distribution_params": (0.5, 2.0),
-            "damping_distribution_params": (0.5, 2.0),
+            # Reset-time gain randomization must not add position stiffness to wheels.
+            "asset_cfg": SceneEntityCfg("robot", joint_names="(?!wheel_).*"),
+            "stiffness_distribution_params": (1.0, 1.0),
+            "damping_distribution_params": (1.0, 1.0),
             "operation": "scale",
             "distribution": "log_uniform",
         },
@@ -384,13 +411,30 @@ class RewardsCfg:
     rew_same_foot_x_position = RewTerm(
         func=mdp.same_feet_x_position,
         weight=-50, # 0.1, # changed to penalty mode
-        params={"asset_cfg": SceneEntityCfg("robot", body_names="wheel_.*")},
+        params={"asset_cfg": SceneEntityCfg("robot", body_names="wheel_.*"), "axis_idx": 1},
     )
 
     # penalizations
     pen_lin_vel_z = RewTerm(func=mdp.lin_vel_z_l2, weight=-0.3)
     pen_ang_vel_xy = RewTerm(func=mdp.ang_vel_xy_l2, weight=-0.3)
     pen_joint_torque = RewTerm(func=mdp.joint_torques_l2, weight=-0.00016)
+    # Task-specific soft target, not a motor rating or a hard torque cap.
+    pen_abad_torque_excess = RewTerm(
+        func=mdp.joint_torque_excess_l1,
+        weight=-1.0,
+        params={
+            "asset_cfg": SceneEntityCfg("robot", joint_names="abad_[LR]_Joint"),
+            "continuous_torque": 0.5,
+        },
+    )
+    pen_wheel_torque_above_continuous = RewTerm(
+        func=mdp.joint_torque_excess_l1,
+        weight=-1.0,
+        params={
+            "asset_cfg": SceneEntityCfg("robot", joint_names="wheel_.+"),
+            "continuous_torque": WHEEL_CONTINUOUS_TORQUE_NM,
+        },
+    )
     pen_joint_accel = RewTerm(func=mdp.joint_acc_l2, weight=-1.5e-7)
     pen_action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.3) # -0.03
     pen_non_wheel_pos_limits = RewTerm(
@@ -408,17 +452,25 @@ class RewardsCfg:
     pen_feet_distance = RewTerm(
         func=mdp.feet_distance,
         weight=-100,
-        params={"min_feet_distance": 0.32,
-                "max_feet_distance": 0.35,
+        params={"min_feet_distance": 0.11,
+                "max_feet_distance": 0.16,
                 "feet_links_name": ["wheel_[RL]_Link"]}
     )
     # pen_action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.01)
     
     # pen_joint_accel = RewTerm(func=mdp.joint_acc_l2, weight=-2.5e-7)
-    pen_base_height = RewTerm(func=mdp.base_com_height, params={"target_height": 0.80}, weight=-30.0)
+    pen_base_height = RewTerm(func=mdp.base_com_height, params={"target_height": 0.18}, weight=-30.0)
     
     
     pen_joint_power_l1 = RewTerm(func=mdp.joint_powers_l1, weight=-2e-5)
+    # Minimize mechanical power of the leg joints while leaving wheel power
+    # outside this dedicated term. joint_powers_l1 uses |torque * velocity|
+    # per joint, so opposing signed powers cannot cancel each other.
+    pen_non_wheel_power_l1 = RewTerm(
+        func=mdp.joint_powers_l1,
+        weight=-2e-5,
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names="(?!wheel_).*")},
+    )
     pen_joint_vel_wheel_l2 = RewTerm(
         func=mdp.joint_vel_l2, weight=-5e-3, params={"asset_cfg": SceneEntityCfg("robot", joint_names="wheel_.+")}
     )
@@ -448,6 +500,16 @@ class TerminationsCfg:
     base_contact = DoneTerm(
         func=mdp.illegal_contact,
         params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names="base_Link"), "threshold": 1.0},
+    )
+    non_wheel_contact = DoneTerm(
+        func=mdp.illegal_contact,
+        params={
+            "sensor_cfg": SceneEntityCfg(
+                "contact_forces",
+                body_names=["abad_.*", "hip_.*", "base_Link"],
+            ),
+            "threshold": 1.0,
+        },
     )
 
 
