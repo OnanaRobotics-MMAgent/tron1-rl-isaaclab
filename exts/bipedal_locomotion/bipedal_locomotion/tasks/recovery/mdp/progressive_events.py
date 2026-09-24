@@ -17,7 +17,8 @@ def prepare_progressive(env, env_ids):
         raise ValueError('Recovery requires finite authored leg joint limits')
     # Keep the USD limits, including continuous wheels. No articulation-wide
     # limit rewrite: it would replace infinite wheel limits with hard stops.
-    urdf = Path(__file__).resolve().parents[3] / 'assets/urdf/WF_TRON1A.urdf'
+    urdf = getattr(env.cfg.getup, 'geometry_urdf', '') or (
+        Path(__file__).resolve().parents[3] / 'assets/urdf/WF_TRON1A.urdf')
     positions = dict(zip(robot.joint_names, robot.data.default_joint_pos[0].cpu().tolist()))
     env._getup_collision_corners = torch.as_tensor(
         nominal_collision_corners(urdf, positions), device=env.device)

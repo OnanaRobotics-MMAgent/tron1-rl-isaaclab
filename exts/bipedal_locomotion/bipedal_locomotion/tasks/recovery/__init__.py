@@ -78,6 +78,7 @@ from .agents.rsl_rl_ppo_cfg import WF_TRON1AFallenPPORunnerCfg
 
 from .progressive_env_cfg import (
     WFProgressiveRecoveryEnvCfg, WFProgressiveRecoveryEnvCfg_PLAY, WFInvertedRecoveryEnvCfg_PLAY,
+    WFRecoveryLocomotionEnvCfg_PLAY,
 )
 from .agents.rsl_rl_ppo_cfg import WFProgressiveRecoveryPPORunnerCfg
 
@@ -85,6 +86,7 @@ for task_id, env_cfg in (
     ('Isaac-Limx-WF-Recovery-Progressive-v0', WFProgressiveRecoveryEnvCfg),
     ('Isaac-Limx-WF-Recovery-Progressive-Play-v0', WFProgressiveRecoveryEnvCfg_PLAY),
     ('Isaac-Limx-WF-Recovery-Inverted-Play-v0', WFInvertedRecoveryEnvCfg_PLAY),
+    ('Isaac-Limx-WF-Recovery-Locomotion-Play-v0', WFRecoveryLocomotionEnvCfg_PLAY),
 ):
     gym.register(id=task_id, entry_point='isaaclab.envs:ManagerBasedRLEnv',
                  disable_env_checker=True,
