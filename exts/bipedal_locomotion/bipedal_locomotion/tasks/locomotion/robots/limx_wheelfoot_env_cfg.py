@@ -104,15 +104,13 @@ def configure_flat_baseline(cfg):
     for name in ("policy", "critic", "commands", "obsHistory"):
         getattr(cfg.observations, name).enable_corruption = False
 
-    # FK of the adapted URDF: these mirrored hip/knee angles put the mean
-    # wheel center at z=-0.1425 m and y=-0.020003 m (whole-body COM y).
-    # At base z=0.182, the 0.0375 m wheels start about 2 mm above the plane.
-    # This is a nominal kinematic pose, not a guarantee of PD-only stability.
-    cfg.scene.robot.init_state.pos = (0.0, 0.0, 0.182)
+    # With hip_L <= 0 and hip_R >= 0, this mirrored pose keeps both hips
+    # inside the soft limits and starts the wheels just above the ground.
+    cfg.scene.robot.init_state.pos = (0.0, 0.0, 0.201)
     cfg.scene.robot.init_state.joint_pos = {
         "abad_L_Joint": 0.0, "abad_R_Joint": 0.0,
-        "hip_L_Joint": 0.13437526, "hip_R_Joint": -0.13437526,
-        "knee_L_Joint": -0.53190465, "knee_R_Joint": 0.53190465,
+        "hip_L_Joint": -0.055, "hip_R_Joint": 0.055,
+        "knee_L_Joint": -0.75, "knee_R_Joint": 0.75,
         "wheel_L_Joint": 0.0, "wheel_R_Joint": 0.0,
     }
     # Use the actual squared-height term rather than the legacy absolute-error

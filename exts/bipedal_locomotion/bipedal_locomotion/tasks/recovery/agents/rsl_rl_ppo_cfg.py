@@ -49,6 +49,11 @@ class WF_TRON1AFallenPPORunnerCfg(WF_TRON1AGetUpBoundedPPORunnerCfg):
 
 
 @configclass
+class WF_TRON1AInvertedPPORunnerCfg(WF_TRON1AGetUpBoundedPPORunnerCfg):
+    experiment_name = "wf_tron_1a_inverted"
+
+
+@configclass
 class WFProgressiveRecoveryPPORunnerCfg(WF_TRON1AGetUpRecoveryPPORunnerCfg):
     experiment_name = 'wheel_leg_recovery_progressive'
 

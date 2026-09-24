@@ -132,4 +132,6 @@ def reset_fallen(env, env_ids):
     state.steps[env_ids] = 0
     state.success[env_ids] = False
     state.active[env_ids] = True
+    state.landing_steps[env_ids] = 0
+    state.control_ready[env_ids] = not getattr(cfg, "require_landing", False)
     state.start_xy[env_ids] = root[:, :2]

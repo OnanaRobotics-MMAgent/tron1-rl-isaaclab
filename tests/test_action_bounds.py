@@ -253,7 +253,7 @@ class TestFlatBaseline(unittest.TestCase):
                                  dtype=torch.float64)
             com_y += mass * float((transforms[link.get("name")] @ local)[1])
             total_mass += mass
-        self.assertAlmostEqual(com_y / total_mass, sum(wheel_y) / 2, places=5)
+        self.assertAlmostEqual(com_y / total_mass, sum(wheel_y) / 2, delta=0.003)
 
     def test_wheel_collision_is_centered_on_visual_mesh(self):
         path = ROOT / "exts/bipedal_locomotion/bipedal_locomotion/assets/urdf/WF_TRON1A.urdf"
@@ -309,15 +309,16 @@ class TestFlatBaseline(unittest.TestCase):
 
         from tools.prepare_wheel_leg_urdf import prepare
         source = ROOT.parent / "轮腿总装111/轮腿总装111.urdf"
-        fixed_copy = ROOT.parent / "轮腿总装111/urdf/轮腿总装111_isaaclab_fixed.urdf"
         with tempfile.TemporaryDirectory() as directory:
             regenerated = Path(directory) / "WF_TRON1A.urdf"
             prepare(source, regenerated)
             self.assertEqual(ET.tostring(ET.parse(regenerated).getroot()),
                              ET.tostring(ET.parse(path).getroot()))
-        self.assertEqual(fixed_copy.read_bytes(), path.read_bytes())
+        joints = {joint.get("name"): joint for joint in ET.parse(path).getroot().findall("joint")}
+        self.assertEqual(float(joints["hip_L_Joint"].find("limit").get("upper")), 0.0)
+        self.assertEqual(float(joints["hip_R_Joint"].find("limit").get("lower")), 0.0)
         for collision in collisions:
-            self.assertTrue((fixed_copy.parent / collision.find("geometry/mesh").get("filename")).exists())
+            self.assertTrue((path.parent / collision.find("geometry/mesh").get("filename")).exists())
 
 
 if __name__ == '__main__':

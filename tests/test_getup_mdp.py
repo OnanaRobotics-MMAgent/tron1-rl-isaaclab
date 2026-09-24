@@ -50,6 +50,7 @@ def make_env(n=4):
 ENTITIES = dict(wheel_cfg=SimpleNamespace(name="contact_forces", body_ids=[0, 1]),
                 body_cfg=SimpleNamespace(name="contact_forces", body_ids=[2]),
                 leg_cfg=SimpleNamespace(name="robot", joint_ids=list(range(6))))
+LANDING_CFG = SimpleNamespace(name="contact_forces", body_ids=[2])
 
 
 class TestGetUp(unittest.TestCase):
@@ -102,6 +103,69 @@ class TestGetUp(unittest.TestCase):
         env.scene["robot"].data.projected_gravity_b[0, 2] = 1.
         self.assertEqual(rewards.upright(env).tolist(), [0., 1., 1., 1.])
         self.assertFalse(bool(rewards.stable_mask(env, **ENTITIES)[0]))
+
+    def test_height_reward_scales_with_signed_z_projection(self):
+        env = make_env()
+        env.scene["robot"].data.projected_gravity_b[:, 2] = torch.tensor([1., 0.5, 0., -1.])
+        torch.testing.assert_close(rewards.signed_height_tracking(env), torch.tensor([0., 0.0625, 0.25, 1.]))
+
+    def test_height_reward_tracks_height_at_partial_orientation(self):
+        env = make_env()
+        env.scene["robot"].data.projected_gravity_b[:, 2] = 0.5
+        env.scene["robot"].data.root_pos_w[:, 2] = torch.tensor([0.18, 0.43, -0.07, 0.18])
+        expected = 0.0625 * torch.exp(-torch.tensor([0., 1., 1., 0.]))
+        torch.testing.assert_close(rewards.signed_height_tracking(env), expected)
+
+    def test_height_reward_is_positive_near_inversion_and_accelerates_upright(self):
+        env = make_env()
+        env.scene["robot"].data.projected_gravity_b[:, 2] = torch.tensor(
+            [math.cos(math.radians(10)), 0., -0.5, -1.]
+        )
+        values = rewards.signed_height_tracking(env)
+        self.assertGreater(float(values[0]), 0.)
+        self.assertLess(float(values[0]), float(values[1]))
+        self.assertLess(float(values[2] - values[1]), float(values[3] - values[2]))
+
+    def test_landing_must_precede_control_and_success(self):
+        env = make_env()
+        env.cfg.getup.require_landing = True
+        env.cfg.getup.landing_force = 5.0
+        env.cfg.getup.landing_hold_time = 0.06
+        state = get_state(env)
+        state.control_ready[:] = False
+        for step in range(1, 4):
+            env.common_step_counter = step
+            self.assertFalse(bool(terminations.sustained_success(
+                env, **ENTITIES, landing_cfg=LANDING_CFG
+            ).any()))
+        self.assertFalse(bool(state.control_ready.any()))
+        env.scene["contact_forces"].data.net_forces_w[:, 2, 2] = 20.0
+        for step in range(4, 6):
+            env.common_step_counter = step
+            terminations.sustained_success(env, **ENTITIES, landing_cfg=LANDING_CFG)
+        self.assertFalse(bool(state.control_ready.any()))
+        env.common_step_counter = 6
+        terminations.sustained_success(env, **ENTITIES, landing_cfg=LANDING_CFG)
+        self.assertTrue(bool(state.control_ready.all()))
+        self.assertFalse(bool(state.success.any()))
+
+    def test_inverted_control_unblocks_on_first_base_contact_only(self):
+        env = make_env()
+        env.cfg.getup.require_landing = True
+        env.cfg.getup.landing_force = 5.0
+        env.cfg.getup.landing_hold_time = 0.0
+        state = get_state(env)
+        state.control_ready[:] = False
+        env.common_step_counter = 1
+        terminations.sustained_success(env, **ENTITIES, landing_cfg=LANDING_CFG)
+        self.assertFalse(bool(state.control_ready.any()))  # Wheels touch; base does not.
+        env.scene["contact_forces"].data.net_forces_w[0, 2, 2] = 5.0
+        env.scene["contact_forces"].data.net_forces_w[1, 2, 2] = 6.0
+        env.common_step_counter = 2
+        terminations.sustained_success(env, **ENTITIES, landing_cfg=LANDING_CFG)
+        self.assertEqual(state.control_ready.tolist(), [False, True, False, False])
+        terminations.sustained_success(env, **ENTITIES, landing_cfg=LANDING_CFG)
+        self.assertEqual(state.landing_steps.tolist(), [0, 1, 0, 0])
 
     def test_success_requires_both_wheels_no_body_support_and_low_speed(self):
         env = make_env()
@@ -208,7 +272,10 @@ class TestGetUp(unittest.TestCase):
     def test_limits_do_not_enlarge_asset_and_reject_continuous_legs(self):
         names = list(limits.LEG_JOINT_LIMITS)
         usd = torch.tensor([-0.25, 0.25]).expand(2, 6, 2).clone()
-        torch.testing.assert_close(limits.validated_leg_limits(names, limits.LEG_JOINT_LIMITS, usd), usd)
+        expected = usd.clone()
+        expected[:, names.index("hip_L_Joint"), 1] = 0.0
+        expected[:, names.index("hip_R_Joint"), 0] = 0.0
+        torch.testing.assert_close(limits.validated_leg_limits(names, limits.LEG_JOINT_LIMITS, usd), expected)
         invalid = dict(limits.LEG_JOINT_LIMITS)
         invalid[names[0]] = (-2 * math.pi, 2 * math.pi)
         with self.assertRaises(ValueError):

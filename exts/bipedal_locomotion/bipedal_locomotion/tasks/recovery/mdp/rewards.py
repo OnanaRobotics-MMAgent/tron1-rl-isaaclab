@@ -18,6 +18,13 @@ def height_tracking(env):
     return upright(env) * torch.exp(-((height - env.cfg.getup.target_height) / 0.25).square())
 
 
+def signed_height_tracking(env):
+    height = env.scene["robot"].data.root_pos_w[:, 2] - env.scene.env_origins[:, 2]
+    up_z = -env.scene["robot"].data.projected_gravity_b[:, 2]
+    orientation = ((up_z + 1.0) * 0.5).clamp(0.0, 1.0).square()
+    return orientation * torch.exp(-((height - env.cfg.getup.target_height) / 0.25).square())
+
+
 def height_progress(env):
     """Bounded dense height signal below the narrow final-standing kernel."""
     height = env.scene["robot"].data.root_pos_w[:, 2] - env.scene.env_origins[:, 2]
