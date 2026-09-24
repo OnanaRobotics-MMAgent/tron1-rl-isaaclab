@@ -42,6 +42,7 @@ class GetUpCfg:
     # wheel bottom is about 0.16 m below base_Link.
     target_height: float = 0.18
     reset_clearance: float = 0.02
+    min_root_height: float = 0.12
     success_tilt: float = math.radians(15.0)
     height_tolerance: float = 0.07
     max_linear_speed: float = 0.25

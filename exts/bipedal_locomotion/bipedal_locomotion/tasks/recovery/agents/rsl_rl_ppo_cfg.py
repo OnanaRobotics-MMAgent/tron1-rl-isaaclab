@@ -46,3 +46,14 @@ class WF_TRON1AGetUpBoundedPPORunnerCfg(WF_TRON1AGetUpAutoPPORunnerCfg):
 @configclass
 class WF_TRON1AFallenPPORunnerCfg(WF_TRON1AGetUpBoundedPPORunnerCfg):
     experiment_name = 'wf_tron_1a_fallen'
+
+
+@configclass
+class WFProgressiveRecoveryPPORunnerCfg(WF_TRON1AGetUpRecoveryPPORunnerCfg):
+    experiment_name = 'wheel_leg_recovery_progressive'
+
+    def __post_init__(self):
+        super().__post_init__()
+        # A fixed small rate protects the pretrained balance policy during transfer.
+        self.algorithm.schedule = 'fixed'
+        self.algorithm.entropy_coef = 0.003

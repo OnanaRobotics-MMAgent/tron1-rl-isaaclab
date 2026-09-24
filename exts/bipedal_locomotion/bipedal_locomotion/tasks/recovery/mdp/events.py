@@ -6,7 +6,7 @@ from pathlib import Path
 
 import torch
 
-from isaaclab.utils.math import quat_apply, quat_from_angle_axis, quat_mul
+from isaaclab.utils.math import quat_apply_inverse, quat_from_angle_axis, quat_mul
 
 from .state import get_state
 from .limits import validated_leg_limits
@@ -108,13 +108,18 @@ def reset_fallen(env, env_ids):
     rotation = quat_mul(quat_from_angle_axis(yaw, yaw_axis), rotation)
 
     corners = env._getup_collision_corners
-    rotated = quat_apply(rotation[:, None, :].expand(-1, len(corners), -1).reshape(-1, 4),
-                         corners[None].expand(n, -1, -1).reshape(-1, 3)).reshape(n, -1, 3)
+    # Only vertical support is needed; avoid allocating n x vertices x 3
+    # rotated geometry (especially for the new nominal-pose convex hulls).
+    up = torch.zeros(n, 3, device=env.device)
+    up[:, 2] = 1.0
+    local_up = quat_apply_inverse(rotation, up)
+    bottom = (local_up @ corners.T).amin(dim=1)
     asset = env.scene["robot"]
     root = asset.data.default_root_state[env_ids].clone()
     root[:, :3] = env.scene.env_origins[env_ids]
     root[:, :2] += (torch.rand(n, 2, device=env.device) - 0.5) * 0.3
-    root[:, 2] += (-rotated[:, :, 2].amin(dim=1)).clamp(min=0.12) + cfg.reset_clearance
+    root[:, 2] += (-bottom).clamp(
+        min=getattr(cfg, "min_root_height", 0.12)) + cfg.reset_clearance
     root[:, 3:7] = rotation
     root[:, 7:13] = 0.0
     # Ground starts, not high-altitude drops; never step all environments from a reset callback.

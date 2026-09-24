@@ -48,7 +48,65 @@ python scripts/rsl_rl/train.py --task Isaac-Limx-WF-Blind-Flat-v0 --num_envs 409
 
 代码位于 `exts/bipedal_locomotion/bipedal_locomotion/tasks/recovery/`，与 `locomotion` 平级，包含环境配置、`mdp/` 和 `agents/`。复用 WF 机器人与基础配置；旧任务 ID、checkpoint 和 RSL-RL 兼容修复保留。腿关节使用有限角度及物理限位，轮子可连续转动。
 
-当前 `model_21000.pt` 已通过原任务 33 阶段仿真评估（99.91%，16,896 回合）。随机关节姿态使用下面的 Fallen 扩展独立评估与续训。迁移后已验证训练、旧模型推理和无窗口录制，GUI 问题尚未解决。
+### 当前轮腿模型：渐进式 recovery
+
+新任务 `Isaac-Limx-WF-Recovery-Progressive-v0` 使用当前 WF USD，只在此任务开启自碰撞。沿用最新行走/站立策略的非零关节参考姿态、8 维动作缩放、观测与历史编码器、执行器和固定摩擦；速度指令设为零。腿目标受 USD 物理限位约束，轮子保留连续旋转。
+
+课程共 36 级：0–5° 起步，然后 0–10°、5–15°，每次上限增加 5°，直至 170–180°。每级采样前后左右倾倒和随机 yaw；20% 回合复习较简单级别。每个统计窗口至少 4096 个当前级别的完成回合，总成功率 ≥80%、四个方向各 ≥70%（每方向至少 128 回合），连续 3 个窗口达标才升级。未达标就留在原级训练。每回合最多 12 秒，双轮支撑、身体无支撑接触、倾角 <15°、高度 0.18±0.04 m、线速度 <0.25 m/s、角速度 <0.5 rad/s 并连续维持 2 秒才成功。
+
+奖励鼓励抬升、扶正、双轮支撑及稳定站立，允许恢复时身体接地；姿态和静止奖励主要在接近站立时生效。reset 根据适配 URDF 的碰撞凸包及站立关节姿态做正运动学，再按倾角计算离地 5 mm 的高度，不套用旧任务的 12 cm 高度下限。大角度阶段是近地面倾倒/翻倒初态，尚不覆盖任意折叠关节的自然静置姿态库。
+
+当前仓库 logs 仅包含下面的 `model_10000.pt`，其 `task_state` 为空，是最新行走/站立 checkpoint；历史 recovery 的 `model_21000.pt` 未包含在当前 checkout 中。首次迁移用下面命令加载网络与编码器，重置优化器，并从第 0 级开始：
+
+```bash
+cd /home/myoukin/tron1-rl-isaaclab
+export PYTHONPATH="$PWD/exts/bipedal_locomotion:$PWD/rsl_rl${PYTHONPATH:+:$PYTHONPATH}"
+/home/myoukin/isaacsim/python.sh scripts/rsl_rl/train.py \
+  --task Isaac-Limx-WF-Recovery-Progressive-v0 \
+  --num_envs 2048 --headless \
+  --resume True \
+  --checkpoint_path "$PWD/logs/rsl_rl/wheel_leg_abad_kp8/2026-09-22_22-33-55_torque_soft_05/model_10000.pt" \
+  --reset_optimizer --getup_stage 0 \
+  --max_iterations 20000 --save_interval 100 --run_name self_collision_curriculum
+```
+
+`max_iterations` 是新增训练迭代数。输出到 `logs/rsl_rl/wheel_leg_recovery_progressive/`，TensorBoard 的 `Episode/Curriculum/recovery/level` 及 `GetUp/stage_XX/*` 显示课程和成功率。课程升级时 runner 也会自动保存 checkpoint。后续断点续训改用该目录内的新 checkpoint，并去掉 `--reset_optimizer --getup_stage 0`，即可恢复优化器和课程统计。播放使用 `Isaac-Limx-WF-Recovery-Progressive-Play-v0`，用 `--getup_stage 17` 检查 80–90°，`--getup_stage 35` 检查 170–180°。旧 recovery checkpoint 的动作缩放/关节参考姿态与新任务不同，不能仅因网络维度相同就直接混用。
+
+新任务实现验证：28 项相关 CPU 测试通过；加载 `model_10000.pt` 后完成 64 环境、30 次 PPO 更新并保存课程状态。该短测仅验证训练链路，没有训练至恢复收敛。现有完整 `test_action_bounds.py` 中的原始模型重生成测试依赖仓库外 `/home/myoukin/轮腿总装111/轮腿总装111.urdf`，本机缺少该文件，未通过该项；本次修改涉及的动作边界测试均通过。
+
+### 170–180° 翻倒 play 与逐回合力矩记录
+
+新增 `Isaac-Limx-WF-Recovery-Inverted-Play-v0`：单机器人，固定最后一级 170–180°，开启自碰撞，禁用课程晋级与简单姿态回放。专用入口连续播放确定性策略并按完整回合记录（默认 20 回合）：
+
+```bash
+cd /home/myoukin/tron1-rl-isaaclab
+/home/myoukin/isaacsim/python.sh scripts/rsl_rl/play_recovery_torques.py \
+  --checkpoint_path "$PWD/logs/rsl_rl/wheel_leg_recovery_progressive/2026-09-23_19-56-33_self_collision_curriculum/model_30000.pt" \
+  --episodes 20
+```
+
+默认打开仿真窗口并按实时速度播放；加 `--headless` 可无窗口快速导出。无需手动设置 PYTHONPATH。`--seed` 控制倾角/方向采样；`--output_dir` 可指定一个尚不存在的目录，否则自动保存到 `logs/recovery_torques/<时间戳>/`。Ctrl+C 保存当前部分回合，并标记不完整。
+
+力矩包含两个分别命名的通道，单位 N·m：
+
+- `pd_estimate`：`robot.data.applied_torque`，当前隐式 PD 的限幅后估算值，**不是 PhysX 实测电机驱动力矩**。
+- `solver_joint_effort`：`root_physx_view.get_dof_projected_joint_forces()`，求解器返回的关节轴向力矩，可能含约束/接触响应，**不等于单独电机输出**。关节侧数据未折算减速器前电机轴力矩。
+
+每个 0.005 s 物理步后、自动重置前读取这两路信号；PD 估算对应该物理区间开始时，求解器值对应区间结束。每 4 点取有符号算术平均，得到 0.02 s 控制周期曲线，不跨回合平均。峰值、均值、绝对值均值、RMS 全部从原始物理步样本计算，防止正负抵消或平滑掩盖峰值。
+
+输出文件：
+
+- `episode_0000/` 等每回合目录：`physics_torques.csv`（200 Hz 原始值）、`mean_torques.csv` / `.png`（50 Hz 平均曲线）、`summary.json`（每关节统计、初始角度/方向、成功/失败原因）。覆盖 abad/hip/knee/wheel 左右全部 8 个关节。
+- `maxima.csv`：所有回合各关节的均值、绝对值均值、RMS、最小值、最大值、绝对峰值。
+- `overall_maxima.csv`：全次播放各关节的最大/最小值、绝对峰值及峰值所在回合；包含已记录的部分回合。
+- `episodes_mean.csv` / `.png`：所有完整回合（成功与失败均包含）按恢复开始时间对齐的有符号平均曲线。结束后的回合不补零，CSV 的 `contributing_episodes` 表示各时刻参与平均的回合数。不同倾倒方向的正负力矩可能抵消，因此电机负载评估请同时看逐回合绝对峰值、绝对值均值与 RMS。
+- `metadata.json` / `summary.json`：权重路径与 SHA256、种子、信号定义、采样周期及回合信息。
+
+已有 `scripts/rsl_rl/play.py --task Isaac-Limx-WF-Recovery-Inverted-Play-v0` 也可只播放该姿态；要保存力矩请用上述专用入口。
+
+### 历史 recovery 实验（旧模型）
+
+以下为旧模型记录与命令，不代表当前轮腿模型已经学会摔倒恢复。历史 `model_21000.pt` 曾通过原任务 33 阶段仿真评估（99.91%，16,896 回合）；该权重未包含在当前 checkout。
 
 在仓库根目录执行（以下为本机路径）：
 

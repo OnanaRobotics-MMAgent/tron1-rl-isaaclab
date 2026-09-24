@@ -38,17 +38,33 @@ class TestActionBounds(unittest.TestCase):
         self.assertEqual(float(loss(SimpleNamespace(action_mean_bounds=None), mean)), 0.)
 
     def test_action_bounds_account_for_offset_scale_and_actual_joint_order(self):
-        position = SimpleNamespace(_clip=torch.tensor([[[-2., 2.], [-3., 3.]]]),
+        position = SimpleNamespace(cfg=SimpleNamespace(clip={'.*': (-3., 3.)}),
+                                   _clip=torch.tensor([[[-2., 2.], [-3., 3.]]]),
                                    _scale=2., _offset=torch.tensor([[0.5, -0.5]]),
                                    _joint_ids=[1, 0],
                                    _asset=SimpleNamespace(data=SimpleNamespace(
                                        joint_pos_limits=torch.tensor([[[-1., 1.], [-0.5, 0.5]]]))))
-        velocity = SimpleNamespace(_clip=torch.tensor([[[-15., 15.]]]), _scale=3., _offset=0.)
+        velocity = SimpleNamespace(cfg=SimpleNamespace(clip={'.*': (-15., 15.)}),
+                                   _clip=torch.tensor([[[-15., 15.]]]), _scale=3., _offset=0.)
         terms = {'joint_pos': position, 'joint_vel': velocity}
         env = SimpleNamespace(cfg=SimpleNamespace(getup=True), device='cpu',
                               action_manager=SimpleNamespace(active_terms=list(terms), get_term=terms.get))
         actual = resolve(SimpleNamespace(unwrapped=env))
         torch.testing.assert_close(torch.tensor(actual), torch.tensor([[-0.5, 0.], [-0.25, 0.75], [-5., 5.]]))
+
+    def test_unclipped_transfer_actions_still_report_physical_leg_bounds(self):
+        position = SimpleNamespace(cfg=SimpleNamespace(clip=None), action_dim=1,
+                                   _scale=.12, _offset=.1, _joint_ids=[0],
+                                   _asset=SimpleNamespace(data=SimpleNamespace(
+                                       joint_pos_limits=torch.tensor([[[-.5, .7]]]))))
+        velocity = SimpleNamespace(cfg=SimpleNamespace(clip=None), action_dim=1, _scale=53.333, _offset=0.)
+        terms = {'joint_pos': position, 'joint_vel': velocity}
+        env = SimpleNamespace(cfg=SimpleNamespace(getup=True), device='cpu', num_envs=1,
+                              action_manager=SimpleNamespace(active_terms=list(terms), get_term=terms.get))
+        actual = torch.tensor(resolve(SimpleNamespace(unwrapped=env)))
+        torch.testing.assert_close(actual[0], torch.tensor([-5., 5.]))
+        self.assertTrue(torch.isneginf(actual[1, 0]))
+        self.assertTrue(torch.isposinf(actual[1, 1]))
 
 
 class TestFlatTrackingRewards(unittest.TestCase):

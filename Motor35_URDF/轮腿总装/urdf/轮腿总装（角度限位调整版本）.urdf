@@ -1,0 +1,512 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This URDF was automatically created by SolidWorks to URDF Exporter! Originally created by Stephen Brawner (brawner@gmail.com) 
+     Commit Version: 1.6.0-4-g7f85cfe  Build Version: 1.6.7995.38578
+     For more information, please see http://wiki.ros.org/sw_urdf_exporter -->
+<!-- DM-J3507-2EC (24 V): peak output torque 3 N*m and no-load output speed
+     460 rpm = 48.171087 rad/s. The internal 7:1 reduction is included in
+     these output specifications; no external reduction is present.
+     Peak torque and no-load speed are not simultaneously sustainable.
+     Source: DAMIAO 2025 Product Selection Catalog, DM-J3507-2EC (24 V). -->
+<robot
+  name="轮腿总装">
+  <link
+    name="base_link">
+    <inertial>
+      <origin
+        xyz="-0.014056 0.002323 0.019913"
+        rpy="0 0 0" />
+      <mass
+        value="1.158" />
+      <inertia
+        ixx="0.002739820"
+        ixy="0.000051133"
+        ixz="-0.000279755"
+        iyy="0.002376987"
+        iyz="-0.000091341"
+        izz="0.002553495" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://轮腿总装/meshes/base_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.529411764705882 0.549019607843137 0.549019607843137 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://轮腿总装/meshes/base_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <link
+    name="link_hip_R">
+    <inertial>
+      <origin
+        xyz="0.042325 -0.019359 0.000364"
+        rpy="0 0 0" />
+      <mass
+        value="0.208" />
+      <inertia
+        ixx="0.000070318"
+        ixy="0.000025685"
+        ixz="-0.000000486"
+        iyy="0.000096423"
+        iyz="0.000001164"
+        izz="0.000103262" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://轮腿总装/meshes/link_hip_R.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://轮腿总装/meshes/link_hip_R.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="joint_hip_R"
+    type="revolute">
+    <origin
+      xyz="-0.0242 -0.034 -0.02625"
+      rpy="0 0 0" />
+    <parent
+      link="base_link" />
+    <child
+      link="link_hip_R" />
+    <axis
+      xyz="-1 0 0" />
+    <limit
+      lower="-0.9"
+      upper="0.8"
+      effort="3"
+      velocity="48.171087" />
+  </joint>
+  <link
+    name="link_thigh_R">
+    <inertial>
+      <origin
+        xyz="-0.086236 -0.038633 -0.015273"
+        rpy="0 0 0" />
+      <mass
+        value="0.209" />
+      <inertia
+        ixx="0.000102034"
+        ixy="-0.000057734"
+        ixz="-0.000032812"
+        iyy="0.000246195"
+        iyz="-0.000010452"
+        izz="0.000275360" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://轮腿总装/meshes/link_thigh_R.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://轮腿总装/meshes/link_thigh_R.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="Joint_thigh_R"
+    type="revolute">
+    <origin
+      xyz="0.04825 -0.0228 0"
+      rpy="0 0 0" />
+    <parent
+      link="link_hip_R" />
+    <child
+      link="link_thigh_R" />
+    <axis
+      xyz="0 -1 0" />
+    <limit
+      lower="0"
+      upper="1.38"
+      effort="3"
+      velocity="48.171087" />
+  </joint>
+  <link
+    name="Link_calf_R">
+    <inertial>
+      <origin
+        xyz="0.083610977 0.018776 -0.043777420"
+        rpy="0 0 0" />
+      <mass
+        value="0.203" />
+      <inertia
+        ixx="0.000111447"
+        ixy="-0.000042941"
+        ixz="0.000089151"
+        iyy="0.000289085"
+        iyz="0.000022486"
+        izz="0.000235036" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://轮腿总装/meshes/Link_calf_R.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://轮腿总装/meshes/Link_calf_R.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="Joint_calf_R"
+    type="revolute">
+    <origin
+      xyz="-0.0984349768784425 -0.048099999999999 -0.0176225800307585"
+      rpy="0 0 0" />
+    <parent
+      link="link_thigh_R" />
+    <child
+      link="Link_calf_R" />
+    <axis
+      xyz="0 1 0" />
+    <limit
+      lower="0"
+      upper="2.65"
+      effort="3"
+      velocity="48.171087" />
+  </joint>
+  <link
+    name="Link_wheel_R">
+    <inertial>
+      <origin
+        xyz="0 0.012410 0"
+        rpy="0 0 0" />
+      <mass
+        value="0.102" />
+      <inertia
+        ixx="0.000054104"
+        ixy="0"
+        ixz="0"
+        iyy="0.000093950"
+        iyz="0"
+        izz="0.000054104" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://轮腿总装/meshes/Link_wheel_R.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.796078431372549 0.823529411764706 0.937254901960784 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://轮腿总装/meshes/Link_wheel_R.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="Joint_wheel_R"
+    type="continuous">
+    <origin
+      xyz="0.0974505224847362 0.0229999999999967 -0.0510234815300931"
+      rpy="0 0 0" />
+    <parent
+      link="Link_calf_R" />
+    <child
+      link="Link_wheel_R" />
+    <axis
+      xyz="0 1 0" />
+    <limit
+      effort="3"
+      velocity="48.171087" />
+  </joint>
+  <link
+    name="Link_hip_L">
+    <inertial>
+      <origin
+        xyz="0.042503 0.019415 0.000425"
+        rpy="0 0 0" />
+      <mass
+        value="0.209" />
+      <inertia
+        ixx="0.000070742"
+        ixy="-0.000026261"
+        ixz="-0.000000159"
+        iyy="0.000097209"
+        iyz="-0.000001238"
+        izz="0.000104437" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://轮腿总装/meshes/Link_hip_L.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://轮腿总装/meshes/Link_hip_L.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="Joint_hip_L"
+    type="revolute">
+    <origin
+      xyz="-0.0242 0.034 -0.02625"
+      rpy="0 0 0" />
+    <parent
+      link="base_link" />
+    <child
+      link="Link_hip_L" />
+    <axis
+      xyz="-1 0 0" />
+    <limit
+      lower="-0.8"
+      upper="0.9"
+      effort="3"
+      velocity="48.171087" />
+  </joint>
+  <link
+    name="Link_thigh_L">
+    <inertial>
+      <origin
+        xyz="-0.085856 0.037684 -0.015013"
+        rpy="0 0 0" />
+      <mass
+        value="0.218" />
+      <inertia
+        ixx="0.000110037"
+        ixy="0.000059357"
+        ixz="-0.000035353"
+        iyy="0.000261180"
+        iyz="0.000010893"
+        izz="0.000293329" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://轮腿总装/meshes/Link_thigh_L.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://轮腿总装/meshes/Link_thigh_L.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="Joint_thigh_L"
+    type="revolute">
+    <origin
+      xyz="0.04825 0.0228 0"
+      rpy="0 0 0" />
+    <parent
+      link="Link_hip_L" />
+    <child
+      link="Link_thigh_L" />
+    <axis
+      xyz="0 1 0" />
+    <limit
+      lower="-1.38"
+      upper="0"
+      effort="3"
+      velocity="48.171087" />
+  </joint>
+  <link
+    name="Link_calf_L">
+    <inertial>
+      <origin
+        xyz="0.080280977 -0.018007 -0.042034420"
+        rpy="0 0 0" />
+      <mass
+        value="0.212" />
+      <inertia
+        ixx="0.000130867"
+        ixy="0.000056005"
+        ixz="0.000118748"
+        iyy="0.000362347"
+        iyz="-0.000029321"
+        izz="0.000295496" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://轮腿总装/meshes/Link_calf_L.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://轮腿总装/meshes/Link_calf_L.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="Joint_calf_L"
+    type="revolute">
+    <origin
+      xyz="-0.0984349768784346 0.0481 -0.0176225800307687"
+      rpy="0 0 0" />
+    <parent
+      link="Link_thigh_L" />
+    <child
+      link="Link_calf_L" />
+    <axis
+      xyz="0 -1 0" />
+    <limit
+      lower="-2.65"
+      upper="0"
+      effort="3"
+      velocity="48.171087" />
+  </joint>
+  <link
+    name="Link_wheel_L">
+    <inertial>
+      <origin
+        xyz="0 -0.012410 0"
+        rpy="0 0 0" />
+      <mass
+        value="0.102" />
+      <inertia
+        ixx="0.000054104"
+        ixy="0"
+        ixz="0"
+        iyy="0.000093950"
+        iyz="0"
+        izz="0.000054104" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://轮腿总装/meshes/Link_wheel_L.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.796078431372549 0.823529411764706 0.937254901960784 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://轮腿总装/meshes/Link_wheel_L.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="Joint_wheel_L"
+    type="continuous">
+    <origin
+      xyz="0.0974505224847294 -0.023 -0.0510234815300838"
+      rpy="0 0 0" />
+    <parent
+      link="Link_calf_L" />
+    <child
+      link="Link_wheel_L" />
+    <axis
+      xyz="0 -1 0" />
+    <limit
+      effort="3"
+      velocity="48.171087" />
+  </joint>
+</robot>

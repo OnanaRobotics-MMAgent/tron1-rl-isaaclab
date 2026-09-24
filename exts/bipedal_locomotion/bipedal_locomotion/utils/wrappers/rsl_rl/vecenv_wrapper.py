@@ -14,7 +14,12 @@ class RslRlVecEnvWrapper(IsaacLabRslRlVecEnvWrapper):
         bounds = []
         for name in raw.action_manager.active_terms:
             term = raw.action_manager.get_term(name)
-            clip = term._clip.clone()
+            if term.cfg.clip is None:
+                clip = torch.empty(raw.num_envs, term.action_dim, 2, device=raw.device)
+                clip[..., 0] = -torch.inf
+                clip[..., 1] = torch.inf
+            else:
+                clip = term._clip.clone()
             if name == "joint_pos":
                 physical = term._asset.data.joint_pos_limits[:, term._joint_ids]
                 clip[..., 0] = torch.maximum(clip[..., 0], physical[..., 0])

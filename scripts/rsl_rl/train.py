@@ -5,6 +5,15 @@
 import argparse
 import pickle
 import sys
+from pathlib import Path
+
+# This project uses a modified RSL-RL (singular `runner` and a history encoder).
+# Prefer the checkout over any installed rsl_rl, without requiring PYTHONPATH.
+_repo_root = Path(__file__).resolve().parents[2]
+sys.path[:0] = [
+    str(_repo_root / "rsl_rl"),
+    str(_repo_root / "exts" / "bipedal_locomotion"),
+]
 
 from isaaclab.app import AppLauncher
 
