@@ -1,7 +1,14 @@
-"""In-place Motor35 small/high jump tasks."""
+"""Motor35 stationary C2 clearance adaptation; see motor35_jump.py provenance.
+
+All C2 inherited and jump reward weights are retained. Length references and
+length-kernel widths are scaled to Motor35, while small-jump success requires
+the full 0.17 m absolute wheel-bottom clearance. VMC gains/feed-forward and
+moving/obstacle tasks are deliberately not imported.
+"""
 
 from isaaclab.managers import ObservationTermCfg as ObsTerm
 from isaaclab.managers import RewardTermCfg as RewTerm
+from isaaclab.managers import TerminationTermCfg as DoneTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.utils import configclass
 
@@ -12,10 +19,28 @@ from .motor35_wheelfoot_env_cfg import Motor35WFBlindFlatEnvCfg
 
 
 @configclass
+class JumpTerminationsCfg:
+    # Manager execution order guarantees state is current before rewards.
+    jump_update = DoneTerm(func=jump.JumpUpdate)
+    time_out = DoneTerm(func=mdp.time_out, time_out=True)
+    bad_orientation = DoneTerm(func=mdp.bad_orientation, params={"limit_angle": 1.20})
+    minimum_height = DoneTerm(func=jump.jump_minimum_height, params={"minimum_height": .05})
+    joint_limits = DoneTerm(func=mdp.joint_pos_out_of_limit, params={
+        "asset_cfg": SceneEntityCfg("robot", joint_names=jump.LEG_NAMES, preserve_order=True)})
+
+
+@configclass
 class Motor35JumpSmallEnvCfg(Motor35WFBlindFlatEnvCfg):
+    jump: object = jump.JumpCfg()
+
     def __post_init__(self):
         super().__post_init__()
-        self.episode_length_s = 2.0
+        # URDF FK at [-.3, .3, -.8, .8] gives grounded root z=0.203673 m.
+        # The flat asset's 0.15 m spawn penetrates the floor by about 5 cm.
+        self.scene.robot.init_state.pos = (0.0, 0.0, 0.206)
+        self.episode_length_s = 20.0
+        self.terminations = JumpTerminationsCfg()
+        self.events.push_robot = None
         self.actions.joint_pos.class_type = jump.JumpLegPositionAction
         self.actions.joint_pos.preserve_order = True
         self.commands.base_velocity.heading_command = False
@@ -26,42 +51,42 @@ class Motor35JumpSmallEnvCfg(Motor35WFBlindFlatEnvCfg):
         self.commands.base_velocity.ranges.heading = (0.0, 0.0)
         self.commands.base_velocity.debug_vis = False
         wheel = SceneEntityCfg("robot", body_names=["wheel_L_Link", "wheel_R_Link"])
-        contact = SceneEntityCfg("contact_forces", body_names=["wheel_L_Link", "wheel_R_Link"])
+        legs = SceneEntityCfg("robot", joint_names=jump.LEG_NAMES, preserve_order=True)
         for name in ("policy", "obsHistory", "critic"):
             group = getattr(self.observations, name)
             group.jump_time = ObsTerm(func=jump.jump_time_obs)
-            group.jump_clearance = ObsTerm(
-                func=jump.jump_clearance_obs, params={"asset_cfg": wheel, "radius": MOTOR35_WHEEL_RADIUS_M})
-            group.jump_vertical_speed = ObsTerm(
-                func=jump.jump_vertical_speed_obs, params={"asset_cfg": SceneEntityCfg("robot")})
+            group.jump_clearance = ObsTerm(func=jump.jump_clearance_obs,
+                params={"asset_cfg": wheel, "radius": MOTOR35_WHEEL_RADIUS_M})
+            group.jump_vertical_speed = ObsTerm(func=jump.jump_vertical_speed_obs,
+                params={"asset_cfg": SceneEntityCfg("robot")})
 
         for name in vars(self.rewards).copy():
             setattr(self.rewards, name, None)
-        self.rewards.jump_outcome = RewTerm(
-            func=jump.JumpOutcome, weight=15.0,
-            params={"asset_cfg": wheel, "sensor_cfg": contact,
-                    "radius": MOTOR35_WHEEL_RADIUS_M, "target": 0.17, "big_jump": False})
-        self.rewards.takeoff_velocity = RewTerm(
-            func=jump.jump_takeoff_velocity, weight=2.0,
-            params={"asset_cfg": wheel, "sensor_cfg": contact, "radius": MOTOR35_WHEEL_RADIUS_M})
-        self.rewards.stationary = RewTerm(
-            func=jump.jump_stationary, weight=-2.0, params={"asset_cfg": SceneEntityCfg("robot")})
-        self.rewards.wheel_speed = RewTerm(
-            func=jump.jump_wheel_speed, weight=-0.0001,
-            params={"asset_cfg": SceneEntityCfg("robot", joint_names=["wheel_L_Joint", "wheel_R_Joint"])})
-        self.rewards.upright = RewTerm(func=mdp.flat_orientation_l2, weight=-2.0)
-        self.rewards.action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.02)
-        self.rewards.joint_limits = RewTerm(
-            func=mdp.joint_pos_limits, weight=-1.0,
-            params={"asset_cfg": SceneEntityCfg("robot", joint_names="(?!wheel_).*")})
-        # The reference trajectory supplies dense shaping when the 3 Nm motors
-        # cannot produce flight immediately at the start of training.
-        self.rewards.reference = RewTerm(
-            func=jump.jump_reference_error, weight=-0.5,
-            params={"asset_cfg": SceneEntityCfg(
-                "robot", preserve_order=True, joint_names=[
-                    "abad_L_Joint", "abad_R_Joint", "hip_L_Joint", "hip_R_Joint",
-                    "knee_L_Joint", "knee_R_Joint"])})
+        # C2 overrides plus all non-overridden flat-task regularizers.
+        weights = {
+            "lin_vel_z": -.5, "base_height": 2.5, "action_smooth": -.001,
+            "nominal_state": -.5, "track_lin_vel": 3., "track_ang_vel": 1., "track_heading": .25,
+            "crouch": 7., "phase_action": 1.5, "thrust_pose": 5., "thrust_speed": 6.,
+            "takeoff": 14., "takeoff_event": 80., "height": 5., "wheel_clearance": 16.,
+            "airborne": 6., "symmetry": .5, "landing_pose": 6., "landing_soft": 100.,
+            "landing_impact": -35., "recovery": 3., "success": 300., "failure": -120.,
+        }
+        for kind, weight in weights.items():
+            setattr(self.rewards, "jump_" + kind, RewTerm(
+                func=jump.jump_reward, weight=weight, params={"kind": kind}))
+        self.rewards.ang_vel_xy = RewTerm(func=mdp.ang_vel_xy_l2, weight=-.05)
+        self.rewards.orientation = RewTerm(func=mdp.flat_orientation_l2, weight=-4.)
+        self.rewards.dof_vel_legs = RewTerm(func=mdp.joint_vel_l2, weight=-1e-4, params={"asset_cfg": legs})
+        self.rewards.dof_acc = RewTerm(func=mdp.joint_acc_l2, weight=-5e-9)
+        self.rewards.torques = RewTerm(func=mdp.joint_torques_l2, weight=-5e-5)
+        self.rewards.dof_pos_limits = RewTerm(func=jump.jump_joint_margin, weight=-10., params={"asset_cfg": legs})
+        self.rewards.action_rate = RewTerm(func=mdp.action_rate_l2, weight=-.001)
+        self.rewards.collision = RewTerm(func=mdp.undesired_contacts, weight=-5., params={
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names="base_Link"), "threshold": .1})
+        self.rewards.leg_collision = RewTerm(func=mdp.undesired_contacts, weight=-2., params={
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=["abad_.*", "hip_.*", "knee_.*"]), "threshold": .1})
+        self.rewards.leg_posture = RewTerm(func=jump.jump_leg_posture, weight=-.5, params={"asset_cfg": legs})
+        self.rewards.termination = RewTerm(func=mdp.is_terminated, weight=-100.)
 
 
 @configclass
@@ -75,8 +100,7 @@ class Motor35JumpSmallEnvCfg_PLAY(Motor35JumpSmallEnvCfg):
 class Motor35JumpHighEnvCfg(Motor35JumpSmallEnvCfg):
     def __post_init__(self):
         super().__post_init__()
-        self.rewards.jump_outcome.params["big_jump"] = True
-        self.rewards.jump_outcome.params["target"] = 0.17
+        self.jump.big_jump = True
 
 
 @configclass

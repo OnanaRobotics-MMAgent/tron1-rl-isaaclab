@@ -114,6 +114,34 @@ python scripts/rsl_rl/play.py --task Isaac-Limx-WF-GetUp-Inverted-Play-v0 \
 
 控制器记录在 `logs/recovery_fallen/continuous/`，新 checkpoint 在 `logs/rsl_rl/wf_tron_1a_fallen/`。旧模型全测试集评估可用 `scripts/recovery/evaluate_fallen_poses.py --checkpoint "$CHECKPOINT" --pose_bank data/recovery/fallen_v1.pt --output logs/recovery_fallen/evaluation.json --headless`（用 `$SIM_PY` 运行）。播放新任务沿用 `play.py`，传入新 task ID、`--pose_bank data/recovery/fallen_v1.pt` 和所需 checkpoint。
 
+## Motor35 原地跳跃
+
+`Isaac-Motor35-Jump-Small-v0` 和 `Isaac-Motor35-Jump-High-v0` 使用
+[Wheel-Legged-Lab 的 C2 轮底净空配置](https://github.com/zyicome/Wheel-Legged-Lab/blob/e61bfe1fb05aac638ba33e41f91b4eddf3c3c1e7/source/wheel_legged_robot/wheel_legged_robot/tasks/manager_based/wheel_legged_robot/wheel_legged_jump_env_cfg.py)
+作为奖励与状态机基准，固定参考提交 `e61bfe1`。仍使用 Motor35 关节位置、轮速控制，全部执行器硬限幅 3 N·m；不使用 VMC，不改变既有 PD 增益。
+
+- 六阶段：等待、下蹲、蹬伸、飞行、落地、恢复。触发周期 3.5–4.5 秒，触发概率 90%，延迟 0.7–1.1 秒。位置动作在跳跃阶段围绕腿长 IK 参考输出小残差，等待和恢复阶段保留原位置控制。
+- 迁移 C2 的全部 34 个奖励项及权重，包括继承的平地正则项；长度核宽度、腿长和伸腿速度按 Motor35 行程适配。前向速度目标与偏航目标固定为零，不引入移动跳、越障奖励。仿真步长仍为 0.005 秒、控制降采样为 4，因此事件奖励实际值为配置权重乘以 0.02 秒。
+- 腿长由 Motor35 URDF 髋膝关节几何做 FK，参考关节角由同一几何做 IK。下蹲 0.115 m、蹬伸 0.200 m、空中收腿 0.110 m、预落地 0.195 m、吸震 0.125 m。默认关节姿态的接地机身高度约 0.203673 m，出生高度改为 0.206 m，避免旧 0.15 m 配置初始穿地。
+- 小跳成功要求双轮最低轮底的实际净空至少 **0.17 m**，不是参考版本的 90%；还需确认离地、至少 0.12 秒连续腾空、机身上升至少目标的 75%、落地竖直速度绝对值不超过 1.10 m/s，并连续稳定恢复 0.50 秒。大跳的机身上升和轮底净空奖励不封顶，17 cm 仅保留为成功指标的最低门槛。
+- 重置条件：20 秒超时、倾角超过 1.20 rad、机身相对地面高度低于 0.05 m、任一非轮关节超出 URDF 派生的软限位。机身和腿接触地面是惩罚，不再单独立即终止。起跳失败与跳跃成功是一次性奖励事件，进入恢复或等待，不直接 reset。
+- 与参考实现的明确差异：无 VMC 力前馈和分阶段增益；保留本项目无随机化基线及三列附加观测，其中旧跳跃时钟列改为阶段编号。净空使用轮心减半径 0.04 m 再减地面高度，不用相对起跳轮心高度；仅确认飞行期间累计成功净空，排除恢复时抬轮。连续腾空时间不累计断续接触间隔。
+
+从平地 10000 代扩展得到的 `logs/model35_jump_init_10000.pt` 可以继续作为初始化；不要把旧固定时间跳跃任务的已训练 checkpoint 当作等价续训。原始平地 checkpoint 不会被覆盖。小规模检查：
+
+```bash
+export PYTHONPATH="$PWD/exts/bipedal_locomotion:$PWD/rsl_rl${PYTHONPATH:+:$PYTHONPATH}"
+python -m unittest discover -s tests -p test_motor35_jump.py -v
+python scripts/rsl_rl/train.py --task Isaac-Motor35-Jump-Small-v0 \
+  --num_envs 32 --max_iterations 50 --save_interval 50 --headless \
+  --resume True --checkpoint_path "$PWD/logs/model35_jump_init_10000.pt" \
+  --reset_optimizer --experiment_name motor35_jump_c2_smoke --run_name local_check
+```
+
+现有 `scripts/jump/motor35_open_loop.py` 支持 `--task`、`--trigger_delay` 和 `--residual_span`，检查实际 USD/FK 一致性与力矩上限。零动作开环没有轮速平衡策略，不能作为起跳能力验收。
+
+日志中的 `jump/takeoffs`、`jump/successes`、`jump/fail_thrust` 等为每次尝试的事件比例；`jump/peak_clearance_m` 和 `jump/max_clearance_m` 是确认腾空后的回合峰值统计，`jump/raw_max_clearance_m` 另记录未确认的抬轮，不可用它宣称学会跳跃。训练启动成功不代表达到 17 cm，长训练前仍需检查起跳率和蹬伸失败率。
+
 ## 机器人形态
 
 | 形态 | 末端 | Task ID 前缀 |
