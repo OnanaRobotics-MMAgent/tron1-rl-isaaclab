@@ -23,6 +23,16 @@ parser.add_argument("--task", type=str, default=None, help="Name of the task.")
 parser.add_argument("--seed", type=int, default=None, help="Seed used for the environment")
 parser.add_argument("--checkpoint_path", type=str, default=None, help="Relative path to checkpoint file.")
 parser.add_argument("--reset_optimizer", action="store_true", help="Resume network weights with fresh optimizers.")
+parser.add_argument("--jump_trace_path", default=None, help="New CSV path for pre-reset jump diagnostics.")
+parser.add_argument("--jump_trace_envs", type=int, default=4, help="Number of jump environments to trace.")
+parser.add_argument("--jump_min_thrust_time", type=float, default=None)
+parser.add_argument("--jump_min_release_length", type=float, default=None)
+parser.add_argument("--jump_flight_retract_length", type=float, default=None)
+parser.add_argument("--jump_assisted", action="store_true", help="Opt into the historical reference controller.")
+parser.add_argument("--jump_action_rate_weight", type=float, default=None)
+parser.add_argument("--jump_action_smooth_weight", type=float, default=None)
+parser.add_argument("--height_range", type=float, nargs=2, default=None,
+                    metavar=("MIN_M", "MAX_M"), help="Height-task command range within 0.22–0.26 m.")
 
 # append RSL-RL cli arguments
 cli_args.add_rsl_rl_args(parser)
@@ -81,6 +91,40 @@ def main():
     agent_cfg: RslRlPpoAlgorithmMlpCfg = cli_args.parse_rsl_rl_cfg(args_cli.task, args_cli)
     cli_args.configure_getup(env_cfg, args_cli)
     env_cfg.seed = agent_cfg.seed
+    if args_cli.height_range is not None:
+        if not hasattr(env_cfg.commands, "base_height"):
+            raise ValueError("--height_range requires the Motor35 height task")
+        env_cfg.commands.base_height.height_range = tuple(args_cli.height_range)
+    if args_cli.jump_assisted:
+        if not hasattr(env_cfg, "configure_jump_learning"):
+            raise ValueError("--jump_assisted requires a Motor35 jump task")
+        env_cfg.configure_jump_learning(autonomous=False)
+    for name in ("min_thrust_time", "min_release_length", "flight_retract_length"):
+        value = getattr(args_cli, "jump_" + name)
+        if value is not None:
+            if not hasattr(env_cfg, "jump") or value <= 0:
+                raise ValueError("Jump overrides require a jump task and positive values")
+            if env_cfg.jump.autonomous:
+                raise ValueError("Trajectory overrides require --jump_assisted; autonomous actions have no reference")
+            setattr(env_cfg.jump, name, value)
+    for name in ("action_rate", "action_smooth"):
+        value = getattr(args_cli, "jump_" + name + "_weight")
+        if value is not None:
+            if not hasattr(env_cfg, "jump") or not (-float("inf") < value <= 0):
+                raise ValueError("Jump smoothing weights must be finite and non-positive")
+            term_name = "jump_action_smooth" if name == "action_smooth" and not env_cfg.jump.autonomous else name
+            getattr(env_cfg.rewards, term_name).weight = value
+    if hasattr(env_cfg, "jump"):
+        fields = ("autonomous", "big_jump", "target", "clearance_min_m", "airborne_confirm_s",
+                  "ground_confirm_s", "launch_com_vz_min", "clearance_max_tilt") if env_cfg.jump.autonomous else (
+            "autonomous", "min_thrust_time", "min_release_length", "min_release_vz", "flight_retract_length",
+            "crouch_length", "thrust_length", "prelanding_start_vz", "target")
+        print("[INFO] Jump profile:", {name: getattr(env_cfg.jump, name) for name in fields})
+    if args_cli.jump_trace_path is not None:
+        if not hasattr(env_cfg, "jump") or args_cli.jump_trace_envs < 1:
+            raise ValueError("Jump tracing requires a jump task and positive trace env count")
+        env_cfg.jump.trace_path = os.path.abspath(args_cli.jump_trace_path)
+        env_cfg.jump.trace_envs = args_cli.jump_trace_envs
 
     if args_cli.max_iterations is not None:
         agent_cfg.max_iterations = args_cli.max_iterations

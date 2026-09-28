@@ -1,10 +1,4 @@
-"""Motor35 stationary C2 clearance adaptation; see motor35_jump.py provenance.
-
-All C2 inherited and jump reward weights are retained. Length references and
-length-kernel widths are scaled to Motor35, while small-jump success requires
-the full 0.17 m absolute wheel-bottom clearance. VMC gains/feed-forward and
-moving/obstacle tasks are deliberately not imported.
-"""
+"""Autonomous Motor35 clearance learning; assisted C2 mode is opt-in only."""
 
 from isaaclab.managers import ObservationTermCfg as ObsTerm
 from isaaclab.managers import RewardTermCfg as RewTerm
@@ -31,7 +25,7 @@ class JumpTerminationsCfg:
 
 @configclass
 class Motor35JumpSmallEnvCfg(Motor35WFBlindFlatEnvCfg):
-    jump: object = jump.JumpCfg()
+    jump: object = jump.JumpCfg(autonomous=True)
 
     def __post_init__(self):
         super().__post_init__()
@@ -51,7 +45,6 @@ class Motor35JumpSmallEnvCfg(Motor35WFBlindFlatEnvCfg):
         self.commands.base_velocity.ranges.heading = (0.0, 0.0)
         self.commands.base_velocity.debug_vis = False
         wheel = SceneEntityCfg("robot", body_names=["wheel_L_Link", "wheel_R_Link"])
-        legs = SceneEntityCfg("robot", joint_names=jump.LEG_NAMES, preserve_order=True)
         for name in ("policy", "obsHistory", "critic"):
             group = getattr(self.observations, name)
             group.jump_time = ObsTerm(func=jump.jump_time_obs)
@@ -60,8 +53,24 @@ class Motor35JumpSmallEnvCfg(Motor35WFBlindFlatEnvCfg):
             group.jump_vertical_speed = ObsTerm(func=jump.jump_vertical_speed_obs,
                 params={"asset_cfg": SceneEntityCfg("robot")})
 
+        self.configure_jump_learning(self.jump.autonomous)
+
+    def configure_jump_learning(self, autonomous=True):
+        self.jump.autonomous = autonomous
+        self.actions.joint_pos.class_type = (
+            jump.AutonomousLegPositionAction if autonomous else jump.JumpLegPositionAction)
+        legs = SceneEntityCfg("robot", joint_names=jump.LEG_NAMES, preserve_order=True)
+
         for name in vars(self.rewards).copy():
             setattr(self.rewards, name, None)
+        if autonomous:
+            self.rewards.jump_clearance = RewTerm(func=jump.autonomous_clearance_reward, weight=16.)
+            self.rewards.termination = RewTerm(func=mdp.is_terminated, weight=-100.)
+            # Explicitly opt in only after stable jumping has been evaluated.
+            self.rewards.action_rate = RewTerm(func=mdp.action_rate_l2, weight=0.)
+            self.rewards.action_smooth = RewTerm(func=jump.jump_reward, weight=0.,
+                                                params={"kind": "action_smooth"})
+            return
         # C2 overrides plus all non-overridden flat-task regularizers.
         weights = {
             "lin_vel_z": -.5, "base_height": 2.5, "action_smooth": -.001,

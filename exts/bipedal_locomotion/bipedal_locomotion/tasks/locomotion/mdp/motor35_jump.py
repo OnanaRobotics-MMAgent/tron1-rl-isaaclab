@@ -1,7 +1,8 @@
-"""Motor35 position-controlled adaptation of Wheel-Legged-Lab clearance jumping.
+"""Autonomous Motor35 clearance learning and historical assisted comparisons.
 
 Reference: zyicome/Wheel-Legged-Lab, e61bfe1fb05aac638ba33e41f91b4eddf3c3c1e7.
-Phase/reward design follows its BSD-3-Clause jump modules (Copyright 2026 zyicome).
+The opt-in assisted phase/reward design follows its BSD-3-Clause jump modules
+(Copyright 2026 zyicome). Autonomous mode has no reference-action controller.
 Modified for Motor35 URDF kinematics, joint-position actions and absolute wheel
 bottom clearance. No virtual-model torques or phase-dependent gains are used.
 """
@@ -25,6 +26,19 @@ LOWER = (0.0974505224847294, -0.0510234815300838)
 
 @configclass
 class JumpCfg:
+    autonomous: bool = False
+    clearance_min_m: float = 0.01
+    airborne_confirm_s: float = 0.04
+    ground_confirm_s: float = 0.04
+    launch_com_vz_min: float = 0.05
+    clearance_max_tilt: float = 0.50
+    trace_path: str | None = None
+    trace_envs: int = 4
+    capture_diagnostics: bool = False
+    drive_diagnostics: bool = False
+    thrust_ramp_time: float = 0.0
+    residual_limit_rad: float | None = None
+    flight_leg_angle: float | None = None
     target: float = 0.17
     big_jump: bool = False
     wheel_radius: float = 0.04
@@ -147,6 +161,22 @@ class JumpState:
                      "landing_event", "success_event", "failure_event"):
             setattr(self, name, torch.zeros(env.num_envs, device=env.device, dtype=torch.bool))
         self.reset(slice(None))
+        if self.cfg.trace_path:
+            import csv
+            from pathlib import Path
+            path = Path(self.cfg.trace_path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            header = [
+                    "step", "env", "episode_step", "phase_before", "phase_time_s",
+                    "vz_mps", "length_left_m", "length_right_m", "reference_m",
+                    "clearance_m", "contact_left_n", "contact_right_n", "tilt_rad",
+                    "leg_torque_max_nm", "time_gate", "velocity_gate", "length_gate",
+                    "phase_after", "takeoff_event", "failure_event"]
+            if self.cfg.autonomous:
+                header[4], header[5], header[8] = "flight_elapsed_s", "com_vz_mps", "unused_reference_m"
+                header[14:17] = ["air_time_gate", "upward_com_gate", "clearance_gate"]
+            with path.open("x", newline="") as stream:
+                csv.writer(stream).writerow(header)
 
     def sample_cycle(self, ids):
         n = self.cycle[ids].numel()
@@ -181,6 +211,7 @@ class JumpState:
     def update(self):
         env, c, dt = self.env, self.cfg, self.env.step_dt
         robot = env.scene["robot"].data
+        phase_before = self.phase.clone() if c.capture_diagnostics else None
         for name in ("takeoff_event", "landing_event", "success_event", "failure_event"):
             getattr(self, name).zero_()
         self.time += dt
@@ -200,6 +231,16 @@ class JumpState:
         self.ground_steps = torch.where(self.contact.any(dim=1), self.ground_steps + 1, 0)
         z, vz = robot.root_pos_w[:, 2], robot.root_lin_vel_w[:, 2]
         tilt = torch.acos((-robot.projected_gravity_b[:, 2]).clamp(-1, 1))
+        trace = None
+        if c.trace_path:
+            n = min(c.trace_envs, env.num_envs)
+            fields = [env.episode_length_buf, self.phase, self.time, vz,
+                      self.length[:, 0], self.length[:, 1], self.reference(), self.clearance,
+                      forces[:, 0].norm(dim=-1), forces[:, 1].norm(dim=-1), tilt,
+                      robot.applied_torque[:, self.leg_ids].abs().amax(dim=-1),
+                      self.time >= c.min_thrust_time, vz >= c.min_release_vz,
+                      self.length.mean(dim=1) >= c.min_release_length]
+            trace = torch.stack([v[:n].float() for v in fields], dim=1)
         active = self.phase != IDLE
         self.rise = torch.where(active, torch.maximum(self.rise, z - self.start_z), self.rise)
         confirmed = (self.phase == FLIGHT) & self.airborne & self.had_flight
@@ -234,13 +275,14 @@ class JumpState:
         self.fail((self.phase == THRUST) & (self.time >= c.max_thrust_time), "thrust")
         self.fail((self.phase == FLIGHT) & ~self.had_flight
                   & (self.time >= c.max_airborne_wait), "unload")
+        # Wheel touchdown can occur while the root still rises (leg extension
+        # or impact rebound). Contact, not root-velocity sign, ends flight.
         first = ((self.phase == FLIGHT) & self.had_flight & ~self.landed
-                 & (self.ground_steps == 1) & (vz <= 0))
+                 & (self.ground_steps == 1))
         self.landing_vz[first] = vz[first]
         self.landed |= first
         landing = ((self.phase == FLIGHT) & self.had_flight & self.landed
-                   & (self.time >= c.min_flight_time) & (self.ground_steps >= c.contact_confirm_steps)
-                   & (vz <= 0))
+                   & (self.time >= c.min_flight_time) & (self.ground_steps >= c.contact_confirm_steps))
         self.landing_event[:] = landing
         self.soft_landings += (landing & (self.landing_vz.abs() <= c.soft_landing_speed)).float()
         self.enter(landing, LANDING)
@@ -256,12 +298,38 @@ class JumpState:
         self.fail(recovered & self.had_flight & ~success, "performance")
         self.enter(recovered, IDLE)
         self.fail((self.phase == RECOVERY) & (self.time >= c.max_recovery_time), "recovery", IDLE)
+        if c.capture_diagnostics:
+            # Evaluation must see the final physics frame even when the
+            # environment auto-resets before returning from step().
+            env._jump_step_diagnostics = {
+                "start": start.clone(), "phase_before": phase_before,
+                "phase_after": self.phase.clone(), "vz": vz.clone(),
+                "root_z": z.clone(), "clearance": self.clearance.clone(),
+                "airborne": self.airborne.clone(), "contact": self.contact.clone(),
+                "takeoff": self.takeoff_event.clone(), "landing": self.landing_event.clone(),
+                "success": self.success_event.clone(), "failure": self.failure_event.clone(),
+                "stable_recovered": recovered.clone(),
+                "landing_vz": self.landing_vz.clone(), "tilt": tilt.clone(),
+                "leg_torque": robot.applied_torque[:, self.leg_ids].abs().amax(dim=1).clone(),
+            }
+        if trace is not None:
+            import csv
+            n = trace.shape[0]
+            end = torch.stack([self.phase[:n], self.takeoff_event[:n], self.failure_event[:n]], dim=1)
+            rows = torch.cat((trace, end.float()), dim=1).detach().cpu().tolist()
+            with open(c.trace_path, "a", newline="") as stream:
+                csv.writer(stream).writerows(
+                    [env.common_step_counter, i, *row] for i, row in enumerate(rows))
 
     def reference(self):
         c = self.cfg
         target = torch.full_like(self.time, c.nominal_length)
         target = torch.where(self.phase == CROUCH, c.crouch_length, target)
-        target = torch.where(self.phase == THRUST, c.thrust_length, target)
+        thrust = torch.full_like(target, c.thrust_length)
+        if c.thrust_ramp_time > 0:
+            thrust = c.crouch_length + (self.time / c.thrust_ramp_time).clamp(0, 1) * (
+                c.thrust_length - c.crouch_length)
+        target = torch.where(self.phase == THRUST, thrust, target)
         vz = self.env.scene["robot"].data.root_lin_vel_w[:, 2]
         descent = ((c.prelanding_start_vz - vz) /
                    (c.prelanding_start_vz - c.prelanding_full_vz)).clamp(0, 1)
@@ -282,10 +350,160 @@ class JumpState:
         result["jump/attempts_per_episode"] = self.attempts[ids].mean()
         return result
 
+    def reference_angle(self):
+        c = self.cfg
+        angle = torch.full_like(self.time, c.nominal_angle)
+        if c.flight_leg_angle is not None:
+            vz = self.env.scene["robot"].data.root_lin_vel_w[:, 2]
+            descent = ((c.prelanding_start_vz - vz) /
+                       (c.prelanding_start_vz - c.prelanding_full_vz)).clamp(0, 1)
+            flight = c.flight_leg_angle + descent * (c.nominal_angle - c.flight_leg_angle)
+            angle = torch.where(self.phase == FLIGHT, flight, angle)
+        return angle
+
+
+def autonomous_clearance_progress(previous_peak, current_peak, valid, target, big_jump):
+    """One increment per new flight peak; no airtime or takeoff-count bonus."""
+    peak = torch.where(valid, torch.maximum(previous_peak, current_peak.clamp_min(0)), previous_peak)
+    before, after = previous_peak, peak
+    if not big_jump:
+        before, after = before.clamp(max=target), after.clamp(max=target)
+    return peak, (after - before) / target
+
+
+class AutonomousJumpState(JumpState):
+    """Passive flight detection only: never supplies a control trajectory."""
+
+    def __init__(self, env):
+        # The legacy constructor creates bookkeeping, but no timers are sampled.
+        super().__init__(env)
+        for name in ("armed", "candidate", "pending"):
+            setattr(self, name, torch.zeros(env.num_envs, device=env.device, dtype=torch.bool))
+        for name in ("ground_time", "max_com_vz", "rewarded_peak", "progress"):
+            setattr(self, name, torch.zeros(env.num_envs, device=env.device))
+
+    def sample_cycle(self, ids):
+        self.enabled[ids] = True
+
+    def update(self):
+        env, c, dt = self.env, self.cfg, self.env.step_dt
+        r = env.scene["robot"].data
+        before = self.phase.clone()
+        for name in ("takeoff_event", "landing_event", "success_event", "failure_event", "progress"):
+            getattr(self, name).zero_()
+        self.time += dt
+        self.action_history[:, :2] = self.action_history[:, 1:].clone()
+        self.action_history[:, 2] = env.action_manager.get_term("joint_pos").raw_actions
+        length, self.angle = leg_kinematics(r.joint_pos[:, self.leg_ids])
+        self.length_speed = (length - self.length) / dt
+        self.length[:] = length
+        forces = env.scene["contact_forces"].data.net_forces_w.norm(dim=-1)
+        wheel_forces = forces[:, self.sensor_ids]
+        self.contact[:] = wheel_forces > c.contact_force_threshold
+        other = forces.clone()
+        other[:, self.sensor_ids] = 0
+        unsupported = (other <= 1.0).all(dim=1)
+        self.clearance[:] = (r.body_pos_w[:, self.wheel_ids, 2]
+            - env.scene.env_origins[:, 2:3] - c.wheel_radius).amin(dim=1)
+        self.airborne[:] = ~self.contact.any(dim=1) & unsupported & (self.clearance > .001)
+        mass = r.default_mass.to(env.device)
+        com_velocity = (mass.unsqueeze(-1) * r.body_com_lin_vel_w).sum(1) / mass.sum(-1, keepdim=True)
+        com_vz = com_velocity[:, 2]
+        tilt = torch.acos((-r.projected_gravity_b[:, 2]).clamp(-1, 1))
+        self.ground_time = torch.where(self.contact.all(-1), self.ground_time + dt, 0.)
+        self.armed |= self.ground_time >= c.ground_confirm_s
+        start = self.armed & self.airborne & ~self.candidate
+        # Starting another jump is allowed even before stable-landing acceptance.
+        abandoned = start & self.pending
+        self.failure_event |= abandoned
+        self.fail_performance += abandoned.float()
+        self.pending[start] = False
+        self.candidate[start] = True
+        self.armed[start] = False
+        self.had_flight[start], self.landed[start] = False, False
+        for name in ("peak", "rewarded_peak", "air_run", "air_time", "max_com_vz", "ground_steps",
+                     "stable_time", "landing_vz", "takeoff_vz", "rise", "time"):
+            getattr(self, name)[start] = 0
+        self.start_z[start] = r.root_pos_w[start, 2]
+        self.attempts += start.float()
+        self.air_run = torch.where(self.candidate & self.airborne, self.air_run + dt, 0.)
+        self.air_time = torch.maximum(self.air_time, self.air_run)
+        self.max_com_vz = torch.where(self.candidate & self.airborne,
+            torch.maximum(self.max_com_vz, com_vz), self.max_com_vz)
+        quality = (self.candidate & self.airborne & (tilt <= c.clearance_max_tilt)
+                   & (com_velocity[:, :2].norm(dim=-1) <= c.start_max_speed))
+        self.peak = torch.where(quality, torch.maximum(self.peak, self.clearance), self.peak)
+        self.episode_raw_peak = torch.where(self.candidate & self.airborne,
+            torch.maximum(self.episode_raw_peak, self.clearance), self.episode_raw_peak)
+        valid = (quality & (self.air_run >= c.airborne_confirm_s)
+                 & (self.max_com_vz >= c.launch_com_vz_min) & (self.peak >= c.clearance_min_m))
+        self.takeoff_event[:] = valid & ~self.had_flight
+        self.takeoff_vz[self.takeoff_event] = com_vz[self.takeoff_event]
+        self.takeoffs += self.takeoff_event.float()
+        self.had_flight |= valid
+        self.rewarded_peak[:], self.progress[:] = autonomous_clearance_progress(
+            self.rewarded_peak, self.peak, valid, c.target, c.big_jump)
+        self.episode_peak = torch.where(valid, torch.maximum(self.episode_peak, self.peak), self.episode_peak)
+        self.ground_steps = torch.where(self.candidate & self.contact.any(-1), self.ground_steps + 1, 0.)
+        first = self.candidate & self.had_flight & ~self.landed & (self.ground_steps == 1)
+        self.landing_vz[first] = com_vz[first]
+        self.landed |= first
+        touchdown = self.candidate & (self.ground_steps >= c.contact_confirm_steps)
+        self.landing_event[:] = touchdown & self.had_flight
+        self.soft_landings += (self.landing_event & (self.landing_vz.abs() <= c.soft_landing_speed)).float()
+        missed = touchdown & ~self.had_flight
+        self.fail_unload += missed.float()
+        self.failure_event |= missed
+        self.candidate[touchdown] = False
+        self.pending |= self.landing_event
+        self.time[self.landing_event] = 0
+        stable = (self.pending & self.contact.all(-1) & (tilt < c.recovery_max_tilt)
+                  & (com_vz.abs() < c.recovery_max_vz))
+        self.stable_time = torch.where(stable, self.stable_time + dt, 0.)
+        recovered = self.pending & (self.stable_time >= c.recovery_stable_time)
+        self.success_event[:] = (recovered & (self.peak >= c.target)
+            & (self.air_time >= c.success_min_air_time)
+            & (self.landing_vz.abs() <= c.success_max_landing_speed))
+        self.successes += self.success_event.float()
+        failed = recovered & ~self.success_event
+        self.fail_performance += failed.float()
+        self.failure_event |= failed
+        expired = self.pending & ~recovered & (self.time >= c.max_recovery_time)
+        self.fail_recovery += expired.float()
+        self.failure_event |= expired
+        self.pending[recovered | expired] = False
+        self.phase[:] = IDLE
+        self.phase[self.candidate & self.had_flight] = FLIGHT
+        self.phase[self.pending] = RECOVERY
+        if c.capture_diagnostics:
+            env._jump_step_diagnostics = {
+                "start": start.clone(), "phase_before": before, "phase_after": self.phase.clone(),
+                "vz": r.root_lin_vel_w[:, 2].clone(), "root_z": r.root_pos_w[:, 2].clone(),
+                "clearance": self.clearance.clone(), "airborne": self.airborne.clone(),
+                "contact": self.contact.clone(), "takeoff": self.takeoff_event.clone(),
+                "landing": self.landing_event.clone(), "success": self.success_event.clone(),
+                "failure": self.failure_event.clone(), "stable_recovered": recovered.clone(),
+                "landing_vz": self.landing_vz.clone(), "tilt": tilt.clone(),
+                "leg_torque": r.applied_torque[:, self.leg_ids].abs().amax(-1).clone(),
+            }
+        if c.trace_path:
+            import csv
+            # Autonomous column names distinguish passive gates from release commands.
+            fields = [env.episode_length_buf, before, self.time, com_vz,
+                self.length[:, 0], self.length[:, 1], torch.zeros_like(self.time), self.clearance,
+                wheel_forces[:, 0], wheel_forces[:, 1], tilt,
+                r.applied_torque[:, self.leg_ids].abs().amax(-1),
+                self.air_run >= c.airborne_confirm_s, self.max_com_vz >= c.launch_com_vz_min,
+                self.peak >= c.clearance_min_m, self.phase, self.takeoff_event, self.failure_event]
+            rows = torch.stack([v[:c.trace_envs].float() for v in fields], dim=1).cpu().tolist()
+            with open(c.trace_path, "a", newline="") as stream:
+                csv.writer(stream).writerows([env.common_step_counter, i, *row] for i, row in enumerate(rows))
+
 
 def get_state(env):
     if not hasattr(env, "_motor35_jump"):
-        env._motor35_jump = JumpState(env)
+        state_type = AutonomousJumpState if env.cfg.jump.autonomous else JumpState
+        env._motor35_jump = state_type(env)
     return env._motor35_jump
 
 
@@ -307,6 +525,17 @@ class JumpUpdate(ManagerTermBase):
         return metrics
 
 
+def position_pd_demand(target, position, velocity_target, velocity, stiffness, damping, effort):
+    """Implicit PD demand estimate, not a measured PhysX drive torque."""
+    return stiffness * (target - position) + damping * (velocity_target - velocity) + effort
+
+
+def bounded_reference_action(reference, residual, limit, soft_limits):
+    """Bound policy authority without permitting targets outside soft limits."""
+    target = reference + residual.clamp(-limit, limit)
+    return target.clamp(min=soft_limits[..., 0], max=soft_limits[..., 1])
+
+
 class JumpLegPositionAction(JointPositionAction):
     def process_actions(self, actions):
         super().process_actions(actions)
@@ -316,11 +545,72 @@ class JumpLegPositionAction(JointPositionAction):
         scale = torch.where(s.phase == FLIGHT, s.cfg.prelanding_action_residual_scale, scale)
         scale = torch.where(s.phase == LANDING, s.cfg.landing_action_residual_scale, scale)
         default = self._asset.data.default_joint_pos[:, self._joint_ids]
-        reference = leg_pose(s.reference(), s.cfg.nominal_angle)
-        assisted = reference + (self._processed_actions - default) * scale.unsqueeze(-1)
+        reference = leg_pose(s.reference(), s.reference_angle())
+        residual = (self._processed_actions - default) * scale.unsqueeze(-1)
+        assisted = reference + residual
+        if s.cfg.residual_limit_rad is not None:
+            assisted = bounded_reference_action(reference, residual, s.cfg.residual_limit_rad,
+                self._asset.data.soft_joint_pos_limits[:, self._joint_ids])
         self._processed_actions[:] = torch.where(active.unsqueeze(-1), assisted, self._processed_actions)
         limits = self._asset.data.joint_pos_limits[:, self._joint_ids]
         self._processed_actions.clamp_(min=limits[..., 0], max=limits[..., 1])
+
+    def apply_actions(self):
+        super().apply_actions()
+        s = get_state(self._env)
+        if not s.cfg.drive_diagnostics:
+            return
+        import csv
+        from pathlib import Path
+
+        env, data, ids = self._env, self._asset.data, self._joint_ids
+        pos, vel = data.joint_pos[:, ids], data.joint_vel[:, ids]
+        demand = position_pd_demand(self._processed_actions, pos, data.joint_vel_target[:, ids], vel,
+                                   data.joint_stiffness[:, ids], data.joint_damping[:, ids],
+                                   data.joint_effort_target[:, ids])
+        limits = data.joint_effort_limits[:, ids]
+        estimate = demand.clamp(min=-limits, max=limits)
+        path = Path(s.cfg.trace_path).with_name("drive_trace.csv")
+        if not hasattr(env, "_jump_drive_stats"):
+            env._jump_drive_stats = {
+                "samples": torch.zeros(6, device=env.device),
+                "saturated": torch.zeros(6, 6, device=env.device),
+                "max_demand_nm": torch.zeros(6, 6, device=env.device),
+                "error_abs_sum_rad": torch.zeros(6, 6, device=env.device),
+            }
+            fields = ["q_rad", "target_rad", "qd_rad_s", "demand_nm", "clipped_estimate_nm"]
+            with path.open("x", newline="") as stream:
+                csv.writer(stream).writerow(["control_step", "physics_step", "env", "phase"]
+                    + [f"{joint}_{field}" for field in fields for joint in LEG_NAMES])
+        stats = env._jump_drive_stats
+        for phase in range(6):
+            mask = (s.phase == phase).unsqueeze(-1)
+            stats["samples"][phase] += mask.sum()
+            stats["saturated"][phase] += ((demand.abs() >= .99 * limits) & mask).sum(0)
+            stats["max_demand_nm"][phase] = torch.maximum(stats["max_demand_nm"][phase],
+                torch.where(mask, demand.abs(), 0.).amax(0))
+            stats["error_abs_sum_rad"][phase] += (mask * (self._processed_actions - pos).abs()).sum(0)
+        n = min(s.cfg.trace_envs, env.num_envs)
+        values = torch.cat([pos[:n], self._processed_actions[:n], vel[:n], demand[:n], estimate[:n]], dim=1)
+        rows = torch.cat([s.phase[:n, None].float(), values], dim=1).detach().cpu().tolist()
+        with path.open("a", newline="") as stream:
+            csv.writer(stream).writerows([env.common_step_counter, env._sim_step_counter, i, *row]
+                                         for i, row in enumerate(rows))
+
+
+class AutonomousLegPositionAction(JumpLegPositionAction):
+    """Plain position targets; inheritance only reuses optional drive diagnostics."""
+
+    def process_actions(self, actions):
+        JointPositionAction.process_actions(self, actions)
+        limits = self._asset.data.soft_joint_pos_limits[:, self._joint_ids]
+        self._processed_actions.clamp_(min=limits[..., 0], max=limits[..., 1])
+
+
+def autonomous_clearance_reward(env):
+    state = get_state(env)
+    # RewardManager multiplies by dt. A peak increment is a one-time event.
+    return state.progress * (~env.termination_manager.terminated).float() / env.step_dt
 
 
 def jump_time_obs(env):

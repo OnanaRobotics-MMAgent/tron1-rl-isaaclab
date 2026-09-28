@@ -1,11 +1,13 @@
 """Motor35 FK/IK, reference jump state/rewards and checkpoint regressions."""
 
 import ast
+import csv
 import importlib.util
 import math
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
+import tempfile
 import xml.etree.ElementTree as ET
 
 import torch
@@ -35,6 +37,7 @@ class Scene(dict):
 def make_env(fn, n=2):
     q = torch.tensor([0., 0., -.3, .3, -.8, .8]).repeat(n, 1)
     data = SimpleNamespace(joint_pos=q, default_joint_pos=q.clone(),
+        default_mass=torch.ones(n, 2), body_com_lin_vel_w=torch.zeros(n, 2, 3),
         body_pos_w=torch.tensor([[[0., 0., .04], [0., 0., .04]]]).repeat(n, 1, 1),
         root_pos_w=torch.tensor([[0., 0., .2]]).repeat(n, 1),
         root_lin_vel_w=torch.zeros(n, 3), root_lin_vel_b=torch.zeros(n, 3),
@@ -54,6 +57,203 @@ def make_env(fn, n=2):
 class JumpTests(unittest.TestCase):
     def setUp(self):
         self.fn = load_math()
+
+    def test_autonomous_no_spawn_single_wheel_jitter_fall_or_flip_reward(self):
+        env = make_env(self.fn, 6)
+        env.cfg.jump.autonomous = True
+        s = self.fn["get_state"](env)
+        r = env.scene["robot"].data
+        forces = env.scene["contact_forces"].data.net_forces_w
+        r.body_pos_w[:, :, 2] = .08
+        r.body_com_lin_vel_w[:, :, 2] = .3
+        forces.zero_()
+        for _ in range(4):
+            s.update()
+            self.assertEqual(s.progress.tolist(), [0.]*6)
+        forces[:] = 5
+        r.body_pos_w[:, :, 2] = .04
+        s.update(); s.update()
+        forces.zero_()
+        r.body_pos_w[:, :, 2] = .08
+        forces[1, 0] = 5
+        r.body_pos_w[2, :, 2] = .045
+        r.body_com_lin_vel_w[3, :, 2] = -.3
+        r.projected_gravity_b[4] = torch.tensor([math.sin(.8), 0., -math.cos(.8)])
+        r.body_com_lin_vel_w[5, :, 0] = 1.
+        total = torch.zeros(6)
+        for _ in range(5):
+            s.update(); total += s.progress
+        self.assertGreater(float(total[0]), 0.)
+        self.assertEqual(total[1:].tolist(), [0.]*5)
+        self.assertEqual(s.takeoffs.tolist(), [1., 0., 0., 0., 0., 0.])
+
+    def test_autonomous_peak_increment_and_rearm_after_touchdown(self):
+        env = make_env(self.fn)
+        env.cfg.jump.autonomous = True
+        s = self.fn["get_state"](env)
+        r = env.scene["robot"].data
+        forces = env.scene["contact_forces"].data.net_forces_w
+        s.update(); s.update()
+        forces.zero_(); r.body_pos_w[:, :, 2] = .08
+        r.body_com_lin_vel_w[:, :, 2] = .3
+        s.update(); s.update()
+        torch.testing.assert_close(s.progress, torch.full((2,), .04/.17))
+        self.assertEqual(s.phase.tolist(), [self.fn["FLIGHT"]]*2)
+        s.update()
+        self.assertEqual(s.progress.tolist(), [0., 0.])
+        r.body_pos_w[:, :, 2] = .12
+        s.update()
+        torch.testing.assert_close(s.progress, torch.full((2,), .04/.17))
+        for h in (.09, .11, .10):
+            r.body_pos_w[:, :, 2] = h; s.update()
+            self.assertEqual(s.progress.tolist(), [0., 0.])
+        forces[:] = 5; r.body_pos_w[:, :, 2] = .04
+        s.update(); s.update()
+        self.assertTrue(bool(s.landing_event.all()))
+        forces.zero_(); r.body_pos_w[:, :, 2] = .08
+        s.update(); s.update()
+        torch.testing.assert_close(s.progress, torch.full((2,), .04/.17))
+        s.reset(torch.tensor([0]))
+        self.assertEqual(s.takeoffs.tolist(), [0., 2.])
+
+    def test_autonomous_rejects_non_wheel_ground_support(self):
+        env = make_env(self.fn)
+        env.cfg.jump.autonomous = True
+        s = self.fn["get_state"](env)
+        s.update(); s.update()
+        force = torch.zeros(2, 3, 3); force[:, 2, 2] = 5
+        env.scene["contact_forces"].data.net_forces_w = force
+        env.scene["robot"].data.body_pos_w[:, :, 2] = .20
+        env.scene["robot"].data.body_com_lin_vel_w[:, :, 2] = .3
+        for _ in range(5):
+            s.update()
+            self.assertEqual(s.progress.tolist(), [0., 0.])
+
+    def test_autonomous_actions_do_not_use_phase_or_reference(self):
+        default = torch.tensor([[0., 0., -.3, .3, -.8, .8]])
+        def process(action, raw):
+            action._processed_actions = default + .12*raw
+        self.fn["JointPositionAction"] = SimpleNamespace(process_actions=process)
+        cls = self.fn["AutonomousLegPositionAction"]
+        action = cls.__new__(cls)
+        action._joint_ids = list(range(6))
+        bounds = torch.tensor([[[-.7, .7], [-.7, .7], [-1.3, -.07], [.07, 1.3], [-2.5, -.14], [.14, 2.5]]])
+        action._asset = SimpleNamespace(data=SimpleNamespace(soft_joint_pos_limits=bounds))
+        action.process_actions(torch.ones(1, 6))
+        torch.testing.assert_close(action._processed_actions, default+.12)
+        action.process_actions(torch.full((1, 6), 100.))
+        torch.testing.assert_close(action._processed_actions, bounds[..., 1])
+
+    def test_autonomous_peak_small_cap_high_uncapped(self):
+        fn = self.fn["autonomous_clearance_progress"]
+        previous = torch.tensor([.1, .1])
+        peak = torch.tensor([.2, .3])
+        valid = torch.tensor([True, True])
+        _, small = fn(previous, peak, valid, .17, False)
+        torch.testing.assert_close(small, torch.full((2,), .07/.17))
+        _, high = fn(previous, peak, valid, .17, True)
+        torch.testing.assert_close(high, torch.tensor([.1, .2])/.17)
+
+    def test_autonomous_reward_dt_scaling_and_failed_step_mask(self):
+        env = make_env(self.fn)
+        env.cfg.jump.autonomous = True
+        s = self.fn["get_state"](env)
+        s.progress[:] = .25
+        env.termination_manager = SimpleNamespace(terminated=torch.tensor([True, False]))
+        for dt in (.01, .02):
+            env.step_dt = dt
+            actual = self.fn["autonomous_clearance_reward"](env)*dt
+            torch.testing.assert_close(actual, torch.tensor([0., .25]))
+
+    def test_autonomous_success_requires_height_and_stable_landing(self):
+        env = make_env(self.fn)
+        env.cfg.jump.autonomous = True
+        s = self.fn["get_state"](env)
+        s.update(); s.update()
+        r = env.scene["robot"].data
+        forces = env.scene["contact_forces"].data.net_forces_w
+        forces.zero_(); r.body_pos_w[:, :, 2] = .23
+        r.body_com_lin_vel_w[:, :, 2] = .3
+        for _ in range(9):
+            s.update()
+        forces[:] = 5; r.body_pos_w[:, :, 2] = .04
+        r.body_com_lin_vel_w.zero_()
+        s.update(); s.update()
+        self.assertEqual(s.successes.tolist(), [0., 0.])
+        for _ in range(30):
+            s.update()
+        self.assertEqual(s.successes.tolist(), [1., 1.])
+        self.assertEqual(s.phase.tolist(), [0, 0])
+
+    def test_pd_demand_and_bounded_policy_authority(self):
+        demand = self.fn["position_pd_demand"](
+            torch.tensor([1., -1.]), torch.zeros(2), torch.zeros(2),
+            torch.tensor([2., -2.]), 12., .8, torch.zeros(2))
+        torch.testing.assert_close(demand, torch.tensor([10.4, -10.4]))
+        reference = torch.tensor([-.095, .095])
+        limits = torch.tensor([[-1.311, -.069], [.069, 1.311]])
+        target = self.fn["bounded_reference_action"](reference, torch.tensor([1., -1.]), .04, limits)
+        torch.testing.assert_close(target, torch.tensor([-.069, .069]))
+        self.assertTrue(bool(((target-reference).abs() <= .04).all()))
+
+    def test_thrust_ramp_preserves_endpoints(self):
+        env = make_env(self.fn, 3)
+        s = self.fn["get_state"](env)
+        s.phase[:] = self.fn["THRUST"]
+        s.time[:] = torch.tensor([0., .03, .06])
+        torch.testing.assert_close(s.reference(), torch.full((3,), .2))
+        s.cfg.thrust_ramp_time = .06
+        torch.testing.assert_close(s.reference(), torch.tensor([.115, .1575, .2]))
+
+    def test_deep_tuck_trajectory_respects_urdf_soft_limits(self):
+        env = make_env(self.fn, 101)
+        s = self.fn["get_state"](env)
+        s.cfg.flight_leg_angle = 0.
+        s.cfg.flight_retract_length = .09
+        s.cfg.prelanding_start_vz = -.35
+        s.phase[:] = self.fn["FLIGHT"]
+        env.scene["robot"].data.root_lin_vel_w[:, 2] = torch.linspace(1., -1., 101)
+        q = self.fn["leg_pose"](s.reference(), s.reference_angle())
+        joints = {j.attrib["name"]: j for j in ET.parse(URDF).getroot().findall("joint")}
+        for i, name in enumerate(self.fn["LEG_NAMES"]):
+            limit = joints[name].find("limit").attrib
+            lo, hi = float(limit["lower"]), float(limit["upper"])
+            center, half = (lo+hi)/2, .9*(hi-lo)/2
+            self.assertTrue(bool((q[:, i] >= center-half).all()), name)
+            self.assertTrue(bool((q[:, i] <= center+half).all()), name)
+        self.assertAlmostEqual(float(s.reference_angle()[0]), 0.)
+        self.assertAlmostEqual(float(s.reference_angle()[-1]), s.cfg.nominal_angle, places=6)
+
+    def test_trace_preserves_timeout_frame_and_refuses_overwrite(self):
+        with tempfile.TemporaryDirectory() as directory:
+            env = make_env(self.fn)
+            env.cfg.jump.trace_path = str(Path(directory) / "trace.csv")
+            env.cfg.jump.trace_envs = 1
+            env.cfg.jump.capture_diagnostics = True
+            env.common_step_counter = 18
+            env.episode_length_buf = torch.full((2,), 18)
+            env.scene["robot"].data.applied_torque = torch.zeros(2, 6)
+            s = self.fn["get_state"](env)
+            s.phase[:] = self.fn["THRUST"]
+            s.time[:] = .35
+            s.update()
+            s.reset(torch.tensor([0]))
+            snapshot = env._jump_step_diagnostics
+            self.assertEqual(float(snapshot["phase_before"][0]), 2)
+            self.assertEqual(float(snapshot["phase_after"][0]), 5)
+            self.assertTrue(bool(snapshot["failure"][0]))
+            with open(env.cfg.jump.trace_path, newline="") as stream:
+                rows = list(csv.DictReader(stream))
+            self.assertEqual(len(rows), 1)
+            row = rows[0]
+            self.assertEqual(float(row["phase_before"]), 2)
+            self.assertEqual(float(row["phase_after"]), 5)
+            self.assertEqual(float(row["failure_event"]), 1)
+            self.assertGreater(float(row["phase_time_s"]), .36)
+            self.assertEqual(float(row["velocity_gate"]), 0)
+            self.assertEqual(float(row["length_gate"]), 0)
+            with self.assertRaises(FileExistsError):
+                self.fn["JumpState"](env)
 
     def test_urdf_geometry_and_reference_joint_limits(self):
         root = ET.parse(URDF).getroot()
@@ -110,6 +310,50 @@ class JumpTests(unittest.TestCase):
         height, flying, _ = self.fn["jump_measurements"](env, cfg, sensor, .04)
         torch.testing.assert_close(height, torch.tensor([.21, .21, 0.]))
         self.assertEqual(flying.tolist(), [True, False, False])
+
+    def test_positive_root_velocity_touchdown_is_confirmed_once(self):
+        env = make_env(self.fn)
+        env.cfg.jump.capture_diagnostics = True
+        env.scene["robot"].data.applied_torque = torch.zeros(2, 6)
+        s = self.fn["get_state"](env)
+        s.enabled[:] = False
+        s.phase[:] = self.fn["FLIGHT"]
+        s.time[:] = .06
+        s.had_flight[:] = True
+        env.scene["robot"].data.root_lin_vel_w[:, 2] = .18
+        s.update()
+        self.assertTrue(bool(s.landed.all()))
+        self.assertFalse(bool(s.landing_event.any()))
+        env.scene["robot"].data.root_lin_vel_w[:, 2] = .015
+        s.update()
+        self.assertTrue(bool(s.landing_event.all()))
+        self.assertEqual(s.phase.tolist(), [self.fn["LANDING"]]*2)
+        torch.testing.assert_close(s.landing_vz, torch.full((2,), .18))
+        recovered_events = torch.zeros(2)
+        for _ in range(45):
+            s.update()
+            recovered_events += env._jump_step_diagnostics["stable_recovered"].float()
+        self.assertEqual(s.phase.tolist(), [self.fn["IDLE"]]*2)
+        self.assertFalse(bool(s.landing_event.any()))
+        self.assertEqual(s.fail_performance.tolist(), [1., 1.])
+        self.assertEqual(recovered_events.tolist(), [1., 1.])
+
+    def test_landing_requires_confirmed_flight_and_persistent_contact(self):
+        env = make_env(self.fn)
+        s = self.fn["get_state"](env)
+        s.phase[:] = self.fn["FLIGHT"]
+        s.time[:] = .06
+        s.had_flight[0] = True
+        s.update()
+        self.assertFalse(bool(s.landing_event.any()))
+        env.scene["contact_forces"].data.net_forces_w.zero_()
+        s.update()
+        self.assertFalse(bool(s.landing_event.any()))
+        env.scene["contact_forces"].data.net_forces_w[:] = 5
+        s.update()
+        self.assertFalse(bool(s.landing_event.any()))
+        s.update()
+        self.assertEqual(s.landing_event.tolist(), [True, False])
 
     def test_full_cycle_success_event_and_partial_reset(self):
         env = make_env(self.fn)
