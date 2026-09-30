@@ -1,0 +1,304 @@
+{
+  "source_sha256": "73717afa368ee856b8d7765fa1831f5075defe8ae547aa90b4110181917c2868",
+  "cad_sha256": "f361f52dae6bb9f8427b46458b578e67b2762465831da1bf206b80befef72750",
+  "profile_sha256": "6602cb775baccc6a45402942fd3f35cbb02ed1be43debc4776760d4bf0ee292f",
+  "total_mass_kg": 2.621,
+  "links": {
+    "base_link": {
+      "mass_kg": 1.158,
+      "principal_inertia_kg_m2": [
+        0.002312711042651504,
+        0.0024004647494593394,
+        0.0029571262078891573
+      ],
+      "mesh_bounds_m": [
+        [
+          -0.08694999665021896,
+          -0.0680433139204979,
+          -0.05249999836087227
+        ],
+        [
+          0.03754999861121178,
+          0.07195668667554855,
+          0.07645004987716675
+        ]
+      ],
+      "mesh_sha256": "43a91b031905547dc47c6484364419eb2f3525926bd26f1066cb225fafbdf440"
+    },
+    "link_hip_R": {
+      "mass_kg": 0.208,
+      "principal_inertia_kg_m2": [
+        5.4537788467298054e-05,
+        0.00010322271276982378,
+        0.00011224249876287825
+      ],
+      "mesh_bounds_m": [
+        [
+          1.6479873021779667e-17,
+          -0.039799999445676804,
+          -0.026799999177455902
+        ],
+        [
+          0.07573658227920532,
+          0.026727214455604553,
+          0.02749926596879959
+        ]
+      ],
+      "mesh_sha256": "d5acc9f6a637bd054b7aafda24a55e65ea353a8b671dd91cbbdf53f515b92418"
+    },
+    "link_thigh_R": {
+      "mass_kg": 0.209,
+      "principal_inertia_kg_m2": [
+        7.582469557701325e-05,
+        0.0002663999556872756,
+        0.0002813643487357109
+      ],
+      "mesh_bounds_m": [
+        [
+          -0.12662580609321594,
+          -0.04809999838471413,
+          -0.045807790011167526
+        ],
+        [
+          0.015447059646248817,
+          -5.960463372867153e-11,
+          0.01549999974668026
+        ]
+      ],
+      "mesh_sha256": "b721f47e92d415abb68bea11d3974a27194f6a1bd2662dc566e3d435f2a107a6"
+    },
+    "Link_calf_R": {
+      "mass_kg": 0.203,
+      "principal_inertia_kg_m2": [
+        5.4742063663164786e-05,
+        0.0002817148191952931,
+        0.00029911111714154203
+      ],
+      "mesh_bounds_m": [
+        [
+          -0.02506888657808304,
+          -0.014900000765919685,
+          -0.07613350450992584
+        ],
+        [
+          0.12261328846216202,
+          0.026000002399086952,
+          0.025249987840652466
+        ]
+      ],
+      "mesh_sha256": "daae3f606a0b89fc4dd5d5c729bf720832fb1b1fa8defbb0fd6b9ae298dda27c"
+    },
+    "Link_wheel_R": {
+      "mass_kg": 0.102,
+      "principal_inertia_kg_m2": [
+        5.4104e-05,
+        5.4104e-05,
+        9.395e-05
+      ],
+      "mesh_bounds_m": [
+        [
+          -0.039964791387319565,
+          -0.0059999991208314896,
+          -0.03996685519814491
+        ],
+        [
+          0.039964791387319565,
+          0.026000000536441803,
+          0.03996685519814491
+        ]
+      ],
+      "mesh_sha256": "b22e0494e07ae876bfec02a96f4c918789a8fd9cf7dd9f04f3102981b76b224f"
+    },
+    "Link_hip_L": {
+      "mass_kg": 0.209,
+      "principal_inertia_kg_m2": [
+        5.4556257117400895e-05,
+        0.00010434509406186723,
+        0.00011348664882073191
+      ],
+      "mesh_bounds_m": [
+        [
+          -8.673617379884035e-19,
+          -0.026750000193715096,
+          -0.026799999177455902
+        ],
+        [
+          0.0757116824388504,
+          0.04280000180006027,
+          0.027489040046930313
+        ]
+      ],
+      "mesh_sha256": "fb156707ca94c8407bf9106e3113fa793fb9a2fc285f4197fbba755cfdb8406c"
+    },
+    "Link_thigh_L": {
+      "mass_kg": 0.218,
+      "principal_inertia_kg_m2": [
+        8.30136286564893e-05,
+        0.0002816197376978394,
+        0.00029991263364567114
+      ],
+      "mesh_bounds_m": [
+        [
+          -0.12662580609321594,
+          4.163336342344337e-17,
+          -0.045807790011167526
+        ],
+        [
+          0.015450289472937584,
+          0.04809999838471413,
+          0.015499948523938656
+        ]
+      ],
+      "mesh_sha256": "fea9d7cbafcee1237e1de162b2ffb4d7e8fc37a6acae7ae3486b077d9e969a8d"
+    },
+    "Link_calf_L": {
+      "mass_kg": 0.212,
+      "principal_inertia_kg_m2": [
+        5.5662948750009345e-05,
+        0.00035766943850941424,
+        0.00037537761274057663
+      ],
+      "mesh_bounds_m": [
+        [
+          -0.02506888657808304,
+          -0.026000002399086952,
+          -0.076268270611763
+        ],
+        [
+          0.12267770618200302,
+          0.014900000765919685,
+          0.025249987840652466
+        ]
+      ],
+      "mesh_sha256": "12d088cf180e13c1781bc58f3327f91934983bef6d27b786d468db2f5d09e08d"
+    },
+    "Link_wheel_L": {
+      "mass_kg": 0.102,
+      "principal_inertia_kg_m2": [
+        5.4104e-05,
+        5.4104e-05,
+        9.395e-05
+      ],
+      "mesh_bounds_m": [
+        [
+          -0.03994961827993393,
+          -0.026000000536441803,
+          -0.03997890278697014
+        ],
+        [
+          0.03998279571533203,
+          0.0059999991208314896,
+          0.03997890278697014
+        ]
+      ],
+      "mesh_sha256": "76c7e9e972f5177990b73aaa1fa71e4ffd17ea81be871a51a720775b3fdd35ef"
+    }
+  },
+  "joints": {
+    "joint_hip_R": {
+      "mapped_name": "abad_R_Joint",
+      "axis": "-1 0 0",
+      "lower": -0.9,
+      "upper": 0.8,
+      "effort": 3.0,
+      "velocity": 48.171087
+    },
+    "Joint_thigh_R": {
+      "mapped_name": "hip_R_Joint",
+      "axis": "0 -1 0",
+      "lower": 0.0,
+      "upper": 1.38,
+      "effort": 3.0,
+      "velocity": 48.171087
+    },
+    "Joint_calf_R": {
+      "mapped_name": "knee_R_Joint",
+      "axis": "0 1 0",
+      "lower": 0.0,
+      "upper": 2.65,
+      "effort": 3.0,
+      "velocity": 48.171087
+    },
+    "Joint_wheel_R": {
+      "mapped_name": "wheel_R_Joint",
+      "axis": "0 1 0",
+      "effort": 3.0,
+      "velocity": 48.171087
+    },
+    "Joint_hip_L": {
+      "mapped_name": "abad_L_Joint",
+      "axis": "-1 0 0",
+      "lower": -0.8,
+      "upper": 0.9,
+      "effort": 3.0,
+      "velocity": 48.171087
+    },
+    "Joint_thigh_L": {
+      "mapped_name": "hip_L_Joint",
+      "axis": "0 1 0",
+      "lower": -1.38,
+      "upper": 0.0,
+      "effort": 3.0,
+      "velocity": 48.171087
+    },
+    "Joint_calf_L": {
+      "mapped_name": "knee_L_Joint",
+      "axis": "0 -1 0",
+      "lower": -2.65,
+      "upper": 0.0,
+      "effort": 3.0,
+      "velocity": 48.171087
+    },
+    "Joint_wheel_L": {
+      "mapped_name": "wheel_L_Joint",
+      "axis": "0 -1 0",
+      "effort": 3.0,
+      "velocity": 48.171087
+    }
+  },
+  "cad_inertia_and_com_match": true,
+  "nominal_joint_pos": {
+    "abad_L_Joint": 0.0,
+    "abad_R_Joint": 0.0,
+    "hip_L_Joint": -0.08,
+    "hip_R_Joint": 0.08,
+    "knee_L_Joint": -0.65901083546,
+    "knee_R_Joint": 0.65901083546,
+    "wheel_L_Joint": 0.0,
+    "wheel_R_Joint": 0.0
+  },
+  "nominal_root_height_m": 0.1877140561,
+  "nominal_com_base_m": [
+    -0.019015199643530645,
+    0.0016578618847767923,
+    -0.035631879948357065
+  ],
+  "wheel_center_base_m": [
+    -0.019015199643860354,
+    -1.1449174941446927e-15,
+    -0.14771405606570204
+  ],
+  "forward_axis": "x",
+  "naive_convex_hull_overlaps": [
+    {
+      "links": [
+        "base_link",
+        "link_thigh_R"
+      ],
+      "intersection_sphere_radius_m": 0.0020405776925778323
+    },
+    {
+      "links": [
+        "base_link",
+        "Link_thigh_L"
+      ],
+      "intersection_sphere_radius_m": 0.0025183595941310824
+    }
+  ],
+  "warnings": [
+    "CSV is stale; URDF + CAD COM tensor in SI are authoritative.",
+    "Use convex decomposition; convex-hull intersections are NOT proof of CAD interference.",
+    "Simulation PD gains and torque-speed approximation still need hardware calibration."
+  ],
+  "prepared_sha256": "646c39e0c6b852d0ed7223b56c2bb62731ac491ad00e9bfb925c3acd469af11a"
+}

@@ -1,0 +1,18 @@
+{
+  "task": "Isaac-Motor43-Recovery-Inverted-Play-v0",
+  "checkpoint": "checkpoints/motor43/recovery/model_30000.pt",
+  "checkpoint_sha256": "b072154714bb66e7d4d68ece18a8ed72bd312008e2a86a2b41490f104ea850be",
+  "asset": "validated",
+  "seed": 20260924,
+  "steps": 750,
+  "simulation_seconds": 15.0,
+  "observation": 28,
+  "actor_input": 34,
+  "actions": 8,
+  "velocity": null,
+  "stand_seconds": 0.0,
+  "resets": 5,
+  "recovery_successes": 5,
+  "max_tilt_deg": 178.33375549316406,
+  "self_collisions": true
+}

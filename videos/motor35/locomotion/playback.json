@@ -1,0 +1,22 @@
+{
+  "task": "Isaac-Motor35-Locomotion-Play-v0",
+  "checkpoint": "checkpoints/motor35/locomotion/preflight_zero_policy.pt",
+  "checkpoint_sha256": "c3f99982111fe9d30d8d7f23a520c039e5ef53ebc5bb6c7d85124af94d0f506e",
+  "asset": "current",
+  "seed": 20260930,
+  "steps": 500,
+  "simulation_seconds": 10.0,
+  "observation": 28,
+  "actor_input": 34,
+  "actions": 8,
+  "velocity": [
+    0.3,
+    0.0,
+    0.0
+  ],
+  "stand_seconds": 2.0,
+  "resets": 10,
+  "recovery_successes": 0,
+  "max_tilt_deg": 63.303401947021484,
+  "self_collisions": true
+}

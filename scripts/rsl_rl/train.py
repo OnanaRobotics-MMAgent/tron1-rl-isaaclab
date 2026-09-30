@@ -18,6 +18,7 @@ sys.path[:0] = [
 from isaaclab.app import AppLauncher
 
 # local imports
+sys.path.insert(0, str(_repo_root / "tools/runtime"))
 import cli_args  # isort: skip
 
 # add argparse arguments
@@ -72,7 +73,8 @@ from isaaclab.utils.io import dump_yaml
 from isaaclab_tasks.utils import get_checkpoint_path, parse_env_cfg
 
 # Import extensions to set up environment tasks
-from bipedal_locomotion.utils.wrappers.rsl_rl import RslRlPpoAlgorithmMlpCfg, RslRlVecEnvWrapper
+import bipedal_locomotion_motor43, bipedal_locomotion_motor35
+from bipedal_locomotion_common.wrappers.rsl_rl import RslRlPpoAlgorithmMlpCfg, RslRlVecEnvWrapper
 
 
 torch.backends.cuda.matmul.allow_tf32 = True

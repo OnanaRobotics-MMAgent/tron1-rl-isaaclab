@@ -25,12 +25,12 @@ import gymnasium as gym
 import imageio.v2 as imageio
 import numpy as np
 from PIL import Image,ImageDraw,ImageFont
-import bipedal_locomotion
+import bipedal_locomotion_motor43, bipedal_locomotion_motor35
 from isaaclab_tasks.utils import parse_env_cfg,load_cfg_from_registry
-from bipedal_locomotion.utils.wrappers.rsl_rl import RslRlVecEnvWrapper
+from bipedal_locomotion_common.wrappers.rsl_rl import RslRlVecEnvWrapper
 from rsl_rl.runner import OnPolicyRunner
 
-task='Isaac-Limx-WF-Recovery-Fallen-Play-v0'
+task='Isaac-Motor43-Recovery-Fallen-Play-v0'
 cfg=parse_env_cfg(task,device=a.device,num_envs=1)
 cfg.fallen.bank_path=a.pose_bank;cfg.seed=a.seed
 raw=gym.make(task,cfg=cfg,render_mode='rgb_array')

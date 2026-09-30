@@ -1,0 +1,18 @@
+{
+  "task": "Isaac-Motor35-Recovery-Inverted-Play-v0",
+  "checkpoint": "checkpoints/motor35/recovery/preflight_zero_policy.pt",
+  "checkpoint_sha256": "c3f99982111fe9d30d8d7f23a520c039e5ef53ebc5bb6c7d85124af94d0f506e",
+  "asset": "current",
+  "seed": 20260930,
+  "steps": 500,
+  "simulation_seconds": 10.0,
+  "observation": 28,
+  "actor_input": 34,
+  "actions": 8,
+  "velocity": null,
+  "stand_seconds": 0.0,
+  "resets": 0,
+  "recovery_successes": 0,
+  "max_tilt_deg": 177.52647399902344,
+  "self_collisions": true
+}

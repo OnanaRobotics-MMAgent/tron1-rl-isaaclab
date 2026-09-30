@@ -1,0 +1,83 @@
+{
+  "task": "Isaac-Motor43-Recovery-Locomotion-Play-v0",
+  "checkpoints": [
+    "checkpoints/motor43/recovery/model_30000.pt",
+    "checkpoints/motor43/locomotion/model_10000.pt"
+  ],
+  "checkpoint_sha256": [
+    "b072154714bb66e7d4d68ece18a8ed72bd312008e2a86a2b41490f104ea850be",
+    "180fee6257e5f37b81bd029c230208d2c63529c70f8f8ffcd7e8a5b3a38ce160"
+  ],
+  "dimensions": {
+    "policy_observation": 28,
+    "history_frames": 10,
+    "encoder_input": 280,
+    "encoder_output": 3,
+    "command": 3,
+    "actor_input": 34,
+    "checkpoint_critic_inputs": [
+      214,
+      214
+    ],
+    "action": 8
+  },
+  "seed": 20260924,
+  "asset_revision": "validated",
+  "urdf": "exts/bipedal_locomotion/bipedal_locomotion_motor43/assets/validated/urdf/motor43.urdf",
+  "robot": "motor43",
+  "forward_axis": 1,
+  "lateral_axis": 0,
+  "separation_sign": 1.0,
+  "self_collisions": true,
+  "blend_time_s": 1.0,
+  "ready_hold_s": 0.3,
+  "command": [
+    0.0,
+    0.30000001192092896,
+    0.0
+  ],
+  "thresholds": {
+    "tilt_deg": 20,
+    "support_height_m": [
+      0.14,
+      0.23
+    ],
+    "height_difference_m": 0.035,
+    "length_ratio": [
+      0.7,
+      1.35
+    ],
+    "downward_extension_m": 0.07,
+    "axle_tilt_deg": 35,
+    "axle_alignment_deg": 45,
+    "wheel_lateral_separation_m": 0.08,
+    "angular_speed": 0.8,
+    "wheel_force_N": 3,
+    "retreat_tilt_deg": 40,
+    "retreat_hold_s": 0.15
+  },
+  "note": "FK plus IMU projected gravity; support height is geometric, not true world height. Contact is an additional gate. Both policies retain their own encoder and share actual-action observation history. Absolute yaw is not inferred from gravity.",
+  "validation": {
+    "max_fk_error_m": 5.570025223278208e-07,
+    "entered_locomotion": 1,
+    "resets": 0,
+    "retreats": 0
+  },
+  "duration_s": 15.0,
+  "transitions": [
+    {
+      "time_s": 1.26,
+      "env": 0,
+      "previous": 0,
+      "phase": 1,
+      "tilt_deg": 12.760993957519531
+    },
+    {
+      "time_s": 2.2600000000000002,
+      "env": 0,
+      "previous": 1,
+      "phase": 2,
+      "tilt_deg": 2.006523370742798
+    }
+  ]
+}

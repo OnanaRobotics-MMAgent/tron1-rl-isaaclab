@@ -1,0 +1,22 @@
+{
+  "task": "Isaac-Motor43-Locomotion-Play-v0",
+  "checkpoint": "checkpoints/motor43/locomotion/model_10000.pt",
+  "checkpoint_sha256": "180fee6257e5f37b81bd029c230208d2c63529c70f8f8ffcd7e8a5b3a38ce160",
+  "asset": "validated",
+  "seed": 20260924,
+  "steps": 1000,
+  "simulation_seconds": 20.0,
+  "observation": 28,
+  "actor_input": 34,
+  "actions": 8,
+  "velocity": [
+    0.0,
+    0.3,
+    0.0
+  ],
+  "stand_seconds": 3.0,
+  "resets": 1,
+  "recovery_successes": 0,
+  "max_tilt_deg": 1.9846535921096802,
+  "self_collisions": false
+}

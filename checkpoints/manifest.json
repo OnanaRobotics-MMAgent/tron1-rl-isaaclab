@@ -1,0 +1,28 @@
+{
+  "checkpoints": {
+    "checkpoints/motor43/locomotion/model_10000.pt": {
+      "source": "migrated from a validated local training run; original logs removed",
+      "bytes": 6782589,
+      "sha256": "180fee6257e5f37b81bd029c230208d2c63529c70f8f8ffcd7e8a5b3a38ce160",
+      "status": "validated_local_policy"
+    },
+    "checkpoints/motor43/recovery/model_30000.pt": {
+      "source": "migrated from a validated local training run; original logs removed",
+      "bytes": 6782845,
+      "sha256": "b072154714bb66e7d4d68ece18a8ed72bd312008e2a86a2b41490f104ea850be",
+      "status": "validated_local_policy"
+    },
+    "checkpoints/motor35/locomotion/preflight_zero_policy.pt": {
+      "bytes": 1610140,
+      "sha256": "c3f99982111fe9d30d8d7f23a520c039e5ef53ebc5bb6c7d85124af94d0f506e",
+      "status": "preflight_only_zero_policy"
+    },
+    "checkpoints/motor35/recovery/preflight_zero_policy.pt": {
+      "bytes": 1610140,
+      "sha256": "c3f99982111fe9d30d8d7f23a520c039e5ef53ebc5bb6c7d85124af94d0f506e",
+      "status": "preflight_only_zero_policy"
+    }
+  },
+  "motor35": "Preflight-only zero policies retained solely for task/video smoke playback; no trained Motor35 policy is claimed.",
+  "motor43_asset": "exts/bipedal_locomotion/bipedal_locomotion_motor43/assets/validated"
+}

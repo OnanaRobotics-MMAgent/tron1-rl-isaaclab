@@ -97,9 +97,9 @@ def main():
             if state['phase']=='evaluate':
                 iteration=state['iteration'];path=out/f'eval_{iteration}.json';oldpath=out/f'old_eval_{iteration}.json'
                 state['status']='evaluating';save()
-                run('scripts/recovery/evaluate_fallen_poses.py',['--checkpoint',state['checkpoint'],'--pose_bank',bank,'--output',path,'--headless'],out/f'eval_{iteration}.log')
+                run('tools/evaluation/evaluate_fallen_poses.py',['--checkpoint',state['checkpoint'],'--pose_bank',bank,'--output',path,'--headless'],out/f'eval_{iteration}.log')
                 result=json.loads(path.read_text())
-                run('scripts/rsl_rl/evaluate_getup.py',['--task','Isaac-Limx-WF-GetUp-Bounded-Play-v0',
+                run('tools/evaluation/evaluate_getup.py',['--task','Isaac-Motor43-GetUp-Bounded-Play-v0',
                     '--checkpoint_paths',state['checkpoint'],'--stages',1,17,32,'--num_envs',128,'--episodes_per_env',4,
                     '--output',oldpath,'--headless'],out/f'old_eval_{iteration}.log')
                 old=json.loads(oldpath.read_text())
@@ -125,7 +125,7 @@ def main():
             if shutil.disk_usage(ROOT).free<5*1024**3:raise RuntimeError('Less than 5 GiB free space')
             count=min(a.chunk_iterations,state['target_iteration']-state['iteration'])
             tag='fallen_'+uuid.uuid4().hex[:12];state.update(active_run=tag,status='training');save()
-            args=['--task','Isaac-Limx-WF-Recovery-Fallen-v0','--pose_bank',bank,'--num_envs',a.num_envs,
+            args=['--task','Isaac-Motor43-Recovery-Fallen-v0','--pose_bank',bank,'--num_envs',a.num_envs,
                   '--resume','True','--checkpoint_path',state['checkpoint'],'--max_iterations',count,
                   '--save_interval',100,'--run_name',tag,'--headless']
             if state['first_training']:args += ['--getup_stage',0]

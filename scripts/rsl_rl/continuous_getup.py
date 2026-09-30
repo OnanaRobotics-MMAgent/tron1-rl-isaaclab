@@ -87,7 +87,8 @@ def main():
         atomic_json(state_path, state)
 
     def run(script, args, log):
-        cmd = [sys.executable, str(ROOT / 'scripts/rsl_rl' / script), *map(str, args)]
+        base = ROOT / ('tools/evaluation' if script == 'evaluate_getup.py' else 'scripts/rsl_rl')
+        cmd = [sys.executable, str(base / script), *map(str, args)]
         print('Running:', ' '.join(cmd), '\nLog:', log, flush=True)
         with log.open('w') as stream:
             child = subprocess.Popen(cmd, cwd=ROOT, env=env, stdout=stream, stderr=subprocess.STDOUT,
@@ -137,7 +138,7 @@ def main():
                 stages = list(range(33)) if stage == 32 else sorted({1, max(0, stage - 1), stage})
                 result_path = out / f"eval_{state['iteration']}.json"
                 state['status'] = 'evaluating'; save()
-                run('evaluate_getup.py', ['--task', 'Isaac-Limx-WF-GetUp-Bounded-Play-v0',
+                run('evaluate_getup.py', ['--task', 'Isaac-Motor43-GetUp-Bounded-Play-v0',
                     '--checkpoint_paths', state['checkpoint'], '--stages', *stages,
                     '--num_envs', a.eval_envs, '--episodes_per_env', a.eval_episodes,
                     '--output', result_path, '--headless'], out / f"eval_{state['iteration']}.log")
@@ -170,7 +171,7 @@ def main():
                 raise RuntimeError('Less than 5 GiB free space; paused before starting another training segment')
             tag = 'continuous_' + uuid.uuid4().hex[:12]
             state.update(active_run=tag, status='training'); save()
-            run('train.py', ['--task', 'Isaac-Limx-WF-GetUp-Bounded-v0', '--num_envs', a.num_envs,
+            run('train.py', ['--task', 'Isaac-Motor43-GetUp-Bounded-v0', '--num_envs', a.num_envs,
                 '--resume', 'True', '--checkpoint_path', state['checkpoint'], '--max_iterations', count,
                 '--save_interval', a.save_interval, '--run_name', tag, '--headless'],
                 out / f"train_from_{state['iteration']}_{tag}.log")

@@ -383,7 +383,8 @@ class OnPolicyRunner:
         print(log_string)
 
     def save(self, path, infos=None):
-        task_state = getattr(getattr(self.env, "unwrapped", self.env), "task_state", None)
+        raw_env = getattr(self.env, "unwrapped", self.env)
+        task_state = getattr(raw_env, "task_state", None)
         temporary_path = str(path) + ".tmp"
         torch.save(
             {
@@ -396,6 +397,7 @@ class OnPolicyRunner:
                 "iter": self.current_learning_iteration,
                 "infos": infos,
                 "task_state": task_state.state_dict() if task_state is not None else None,
+                "policy_contract": getattr(getattr(raw_env, "cfg", None), "policy_contract", None),
             },
             temporary_path,
         )
@@ -403,6 +405,12 @@ class OnPolicyRunner:
 
     def load(self, path, load_optimizer=False, load_task_state=False):
         loaded_dict = torch.load(path, map_location=self.device)
+        raw_env = getattr(self.env, "unwrapped", self.env)
+        expected = getattr(getattr(raw_env, "cfg", None), "policy_contract", None)
+        if loaded_dict.get("policy_contract") != expected:
+            raise ValueError("Checkpoint robot/action contract differs from this task. "
+                             "Motor35 requires weights trained with the same prepared model, motors and interface; "
+                             "old WF_TRON1A checkpoints cannot be resumed on Motor35.")
         self.alg.actor_critic.load_state_dict(loaded_dict["model_state_dict"])
         self.alg.clamp_action_std()
         self.alg.encoder.load_state_dict(loaded_dict["encoder_state_dict"])

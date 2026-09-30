@@ -3,6 +3,7 @@
 """Launch Isaac Sim Simulator first."""
 
 import argparse
+import hashlib
 from pathlib import Path
 import sys
 
@@ -15,12 +16,19 @@ import rsl_rl
 from isaaclab.app import AppLauncher
 
 # local imports
+sys.path.insert(0, str(_repo_root / "tools/runtime"))
 import cli_args  # isort: skip
 
 # add argparse arguments
 parser = argparse.ArgumentParser(description="Train an RL agent with RSL-RL.")
 parser.add_argument("--video", action="store_true", default=False, help="Record videos during training.")
 parser.add_argument("--video_length", type=int, default=200, help="Length of the recorded video (in steps).")
+parser.add_argument("--video_folder", type=str, default=None, help="Output directory for recorded videos.")
+parser.add_argument("--asset", choices=("current", "validated"), default="current",
+                    help="Motor43 bundled checkpoints require the validated asset and reference pose.")
+parser.add_argument("--velocity", nargs=3, type=float, metavar=("VX", "VY", "WZ"),
+                    help="Optional constant locomotion command in body coordinates.")
+parser.add_argument("--stand_seconds", type=float, default=0., help="Hold zero velocity before the supplied command.")
 parser.add_argument(
     "--disable_fabric", action="store_true", default=False, help="Disable fabric and use USD I/O operations."
 )
@@ -65,10 +73,11 @@ from isaaclab.envs import ManagerBasedRLEnvCfg,DirectMARLEnv, multi_agent_to_sin
 from isaaclab.utils.dict import print_dict
 from isaaclab_tasks.utils import get_checkpoint_path, parse_env_cfg
 # Import extensions to set up environment tasks
-import bipedal_locomotion  # noqa: F401
-from bipedal_locomotion.utils.wrappers.rsl_rl import (
+import bipedal_locomotion_motor43, bipedal_locomotion_motor35  # noqa: F401
+from bipedal_locomotion_common.wrappers.rsl_rl import (
     RslRlPpoAlgorithmMlpCfg, RslRlVecEnvWrapper, export_mlp_as_onnx, export_policy_as_jit,
 )
+from bipedal_locomotion_common.play.handoff import CheckpointPolicy
 
 
 def main():
@@ -86,6 +95,36 @@ def main():
         env_cfg.getup.curriculum_enabled = False
 
     env_cfg.seed = agent_cfg.seed
+    if args_cli.asset == "validated":
+        if not args_cli.task.startswith("Isaac-Motor43-"):
+            raise ValueError("Only Motor43 has a bundled validated asset snapshot")
+        from bipedal_locomotion_motor43.play.profile import configure_asset
+        configure_asset(env_cfg)
+    if args_cli.velocity is not None:
+        if "Locomotion-Play" not in args_cli.task or "Recovery" in args_cli.task:
+            raise ValueError("--velocity is for standalone locomotion playback")
+        command = env_cfg.commands.base_velocity
+        for value, name in zip(args_cli.velocity, ("lin_vel_x", "lin_vel_y", "ang_vel_z")):
+            low, high = getattr(command.ranges, name)
+            if not low <= value <= high:
+                raise ValueError(f"Command {name}={value} exceeds trained range {low, high}")
+            setattr(command.ranges, name, (value, value))
+        command.heading_command = False
+        command.rel_heading_envs = command.rel_standing_envs = 0.
+        command.debug_vis = False
+    if args_cli.stand_seconds < 0:
+        raise ValueError("--stand_seconds must be nonnegative")
+    if env_cfg.scene.num_envs <= 64:
+        env_cfg.sim.physx.gpu_max_rigid_contact_count = 2**18
+        env_cfg.sim.physx.gpu_max_rigid_patch_count = 2**16
+        env_cfg.sim.physx.gpu_found_lost_pairs_capacity = 2**18
+        env_cfg.sim.physx.gpu_found_lost_aggregate_pairs_capacity = 2**20
+        env_cfg.sim.physx.gpu_total_aggregate_pairs_capacity = 2**18
+    if args_cli.video:
+        env_cfg.viewer.resolution = (960, 720)
+        env_cfg.viewer.origin_type = 'env'
+        env_cfg.viewer.eye = (0.8, 0.8, 0.5)
+        env_cfg.viewer.lookat = (0., 0., 0.15)
 
     # specify directory for logging experiments
     if args_cli.checkpoint_path is None:
@@ -101,10 +140,15 @@ def main():
     env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
 
     if args_cli.video:
+        robot_name = 'motor35' if 'Motor35' in args_cli.task else 'motor43'
+        video_folder = Path(args_cli.video_folder) if args_cli.video_folder else (
+            _repo_root / 'videos' / robot_name / time.strftime('%Y-%m-%d_%H-%M-%S'))
+        video_folder = video_folder.resolve()
         video_kwargs = {
-            "video_folder": os.path.join(log_dir, "videos", "play"),
+            "video_folder": str(video_folder),
             "step_trigger": lambda step: step == 0,
             "video_length": args_cli.video_length,
+            "name_prefix": "recovery" if 'Recovery' in args_cli.task else "locomotion",
             "disable_logger": True,
         }
         print("[INFO] Recording videos during training.")
@@ -119,15 +163,15 @@ def main():
     env = RslRlVecEnvWrapper(env)
     # load previously trained model
     print(f"[INFO]: Loading model checkpoint from: {resume_path}")
-    ppo_runner = OnPolicyRunner(env, agent_cfg.to_dict(), log_dir=None, device=agent_cfg.device)
-    ppo_runner.load(resume_path)
-
-    # obtain the trained policy for inference
-    policy = ppo_runner.get_inference_policy(device=env.unwrapped.device)
-    encoder = ppo_runner.get_inference_encoder(device=env.unwrapped.device)
+    # Playback uses the actor and encoder; differing privileged critic widths
+    # across asset collider versions are irrelevant to inference.
+    playback = CheckpointPolicy(resume_path, env.unwrapped.device, getattr(env_cfg, 'policy_contract', None))
+    policy, encoder = playback.actor, playback.encoder
 
     # export policy to onnx
     if args_cli.export:
+        ppo_runner = OnPolicyRunner(env, agent_cfg.to_dict(), log_dir=None, device=agent_cfg.device)
+        ppo_runner.load(resume_path)
         export_model_dir = os.path.join(os.path.dirname(resume_path), "exported")
         export_policy_as_jit(
             ppo_runner.alg.actor_critic, export_model_dir
@@ -155,11 +199,17 @@ def main():
     episode_steps = torch.zeros_like(completed)
     records = []
     started = time.monotonic()
+    reset_count = success_count = 0
+    max_tilt = 0.
     # simulate environment
     while simulation_app.is_running():
         frame_started = time.monotonic()
         # run everything in inference mode
         with torch.inference_mode():
+            if args_cli.velocity is not None:
+                commands = torch.tensor(args_cli.velocity, device=obs.device).expand(env.num_envs, -1)
+                if steps * env.unwrapped.step_dt < args_cli.stand_seconds:
+                    commands = torch.zeros_like(commands)
             # agent stepping
             est = encoder(obs_history)
             actions = policy(torch.cat((est, obs, commands), dim=-1).detach())
@@ -169,6 +219,15 @@ def main():
             obs_history = obs_history.flatten(start_dim=1)
             commands = infos["observations"].get("commands") 
             steps += 1
+            robot = env.unwrapped.scene['robot']
+            tilt = torch.rad2deg(torch.acos((-robot.data.projected_gravity_b[:, 2]).clamp(-1, 1)))
+            max_tilt = max(max_tilt, float(tilt.max()))
+            reset_count += int(dones.sum())
+            if 'success' in env.unwrapped.termination_manager.active_terms:
+                success_count += int((dones.bool() & env.unwrapped.termination_manager.get_term('success')).sum())
+            if args_cli.video and steps % 2 == 0:
+                center = robot.data.root_pos_w[0].cpu().numpy()
+                env.unwrapped.sim.set_camera_view(center + (0.8, 0.8, 0.5), center)
             if args_cli.eval_episodes:
                 episode_steps += 1
                 # TerminationManager retains this step's flags even after auto-reset.
@@ -203,6 +262,16 @@ def main():
             json.dump(metrics, output, indent=2)
         print(f"[GetUp] Evaluation written to {metrics_path}: {len(successes)}/{len(records)} successes")
 
+    if args_cli.video:
+        metadata = dict(task=args_cli.task, checkpoint=str(Path(resume_path).resolve()),
+                        checkpoint_sha256=hashlib.sha256(Path(resume_path).read_bytes()).hexdigest(),
+                        asset=args_cli.asset, seed=env_cfg.seed, steps=steps,
+                        simulation_seconds=steps*env.unwrapped.step_dt,
+                        observation=28, actor_input=34, actions=8, velocity=args_cli.velocity,
+                        stand_seconds=args_cli.stand_seconds, resets=reset_count,
+                        recovery_successes=success_count, max_tilt_deg=max_tilt,
+                        self_collisions=env_cfg.scene.robot.spawn.articulation_props.enabled_self_collisions)
+        (video_folder/'playback.json').write_text(json.dumps(metadata, indent=2)+'\n')
     # close the simulator
     env.close()
 

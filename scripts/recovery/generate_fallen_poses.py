@@ -29,12 +29,12 @@ import gymnasium as gym
 from pxr import Usd, UsdGeom
 from isaaclab_tasks.utils import parse_env_cfg
 from isaaclab.utils.math import quat_apply, quat_from_angle_axis, quat_mul
-import bipedal_locomotion
-from bipedal_locomotion.tasks.recovery.mdp.pose_bank import pose_ids, validate_bank
+import bipedal_locomotion_motor43, bipedal_locomotion_motor35
+from bipedal_locomotion_motor43.recovery.mdp.pose_bank import pose_ids, validate_bank
 
-cfg = parse_env_cfg('Isaac-Limx-WF-FallenPose-Generate-v0', device=a.device, num_envs=a.num_envs)
+cfg = parse_env_cfg('Isaac-Motor43-FallenPose-Generate-v0', device=a.device, num_envs=a.num_envs)
 cfg.seed = a.seed
-env = gym.make('Isaac-Limx-WF-FallenPose-Generate-v0', cfg=cfg).unwrapped
+env = gym.make('Isaac-Motor43-FallenPose-Generate-v0', cfg=cfg).unwrapped
 robot = env.scene['robot']
 leg_ids = env._getup_leg_joint_ids
 limits = robot.data.joint_pos_limits[0, leg_ids]

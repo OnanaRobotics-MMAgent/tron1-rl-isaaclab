@@ -182,7 +182,7 @@ def prepare(input_path: Path, output_path: Path, part_names: list[str] | None = 
     scale_inertial_mass(links["base_Link"], 2.4)
     if part_names is None:
         mesh_dir = (Path(__file__).resolve().parents[1] /
-                    "exts/bipedal_locomotion/bipedal_locomotion/assets/urdf/meshes")
+                    "exts/bipedal_locomotion/bipedal_locomotion_motor43/assets/urdf/meshes")
         part_names = sorted(path.name for path in mesh_dir.glob(f"{BASE_COLLISION_PREFIX}*.stl"))
     set_base_collision(links["base_Link"], part_names)
     left_wheel_inertial = links["wheel_L_Link"].find("inertial")

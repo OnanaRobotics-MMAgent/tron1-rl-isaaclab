@@ -13,6 +13,8 @@ from isaaclab.app import AppLauncher
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--checkpoint_path', required=True)
+parser.add_argument('--asset', choices=('current', 'validated'), default='current',
+                    help='Use validated with the bundled Motor43 recovery checkpoint.')
 parser.add_argument('--episodes', type=int, default=20, help='Number of complete recovery episodes (one robot).')
 parser.add_argument('--seed', type=int, default=20260924)
 parser.add_argument('--output_dir', help='New directory; existing directories are never overwritten.')
@@ -23,7 +25,7 @@ checkpoint = Path(args.checkpoint_path).expanduser().resolve()
 if not checkpoint.is_file() or args.episodes < 1:
     parser.error('Provide an existing checkpoint and a positive episode count')
 output = Path(args.output_dir).expanduser().resolve() if args.output_dir else (
-    ROOT / 'logs/recovery_torques' / datetime.now().strftime('%Y-%m-%d_%H-%M-%S_%f'))
+    ROOT / 'outputs/recovery_torques' / datetime.now().strftime('%Y-%m-%d_%H-%M-%S_%f'))
 if output.exists():
     parser.error(f'Output directory already exists: {output}')
 app = AppLauncher(args).app
@@ -31,22 +33,26 @@ app = AppLauncher(args).app
 import gymnasium as gym
 import numpy as np
 import torch
-import bipedal_locomotion
-from isaaclab_tasks.utils import parse_env_cfg, load_cfg_from_registry
-from bipedal_locomotion.utils.wrappers.rsl_rl import RslRlVecEnvWrapper
-from rsl_rl.runner import OnPolicyRunner
+import bipedal_locomotion_motor43, bipedal_locomotion_motor35
+from isaaclab_tasks.utils import parse_env_cfg
+from bipedal_locomotion_common.wrappers.rsl_rl import RslRlVecEnvWrapper
+from bipedal_locomotion_common.play.handoff import CheckpointPolicy
+sys.path.insert(0, str(ROOT / 'tools/analysis'))
 from torque_report import TorqueReport
 
 
 def main():
-    task = 'Isaac-Limx-WF-Recovery-Inverted-Play-v0'
+    task = 'Isaac-Motor43-Recovery-Inverted-Play-v0'
     cfg = parse_env_cfg(task, device=args.device, num_envs=1)
     cfg.seed = args.seed
+    if args.asset == 'validated':
+        from bipedal_locomotion_motor43.play.profile import configure_asset
+        configure_asset(cfg)
     env = RslRlVecEnvWrapper(gym.make(task, cfg=cfg))
     raw = env.unwrapped
     robot = raw.scene['robot']
     report = TorqueReport(output, list(robot.joint_names), float(raw.physics_dt), cfg.decimation,
-                         dict(task=task, checkpoint=str(checkpoint), seed=args.seed,
+                         dict(task=task, checkpoint=str(checkpoint), seed=args.seed, asset=args.asset,
                               checkpoint_sha256=hashlib.sha256(checkpoint.read_bytes()).hexdigest(),
                               tilt_range_deg=[170, 180], requested_episodes=args.episodes,
                               self_collisions=True, deterministic_policy=True))
@@ -68,11 +74,8 @@ def main():
                     initial_joint_positions_rad=robot.data.joint_pos[0].cpu().tolist())
 
     try:
-        agent = load_cfg_from_registry(task, 'rsl_rl_cfg_entry_point')
-        runner = OnPolicyRunner(env, agent.to_dict(), device=raw.device)
-        runner.load(str(checkpoint))
-        policy = runner.get_inference_policy()
-        encoder = runner.get_inference_encoder()
+        playback = CheckpointPolicy(checkpoint, raw.device, getattr(cfg, 'policy_contract', None))
+        policy, encoder = playback.actor, playback.encoder
         obs, info = env.reset()
         initial = initial_state()
         manager.record_post_physics_decimation_step = sample
